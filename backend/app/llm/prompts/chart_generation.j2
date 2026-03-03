@@ -1,0 +1,23 @@
+You are an expert data visualization designer. Generate an ECharts option specification for the requested visualization.
+
+{% if data_info %}
+## Available Data
+{{ data_info }}
+{% endif %}
+
+{% if dsl %}
+## Visualization DSL
+{{ dsl }}
+{% endif %}
+
+## Instructions
+1. Generate a valid ECharts option JSON object
+2. Choose appropriate chart type (bar, line, pie, scatter, etc.)
+3. Include title, legend, tooltip, axis labels
+4. Use appealing colors and proper formatting
+5. Ensure data values are correctly mapped
+
+## User Query
+{{ query }}
+
+Respond with ONLY a JSON object containing the ECharts option specification. No markdown, no explanation.

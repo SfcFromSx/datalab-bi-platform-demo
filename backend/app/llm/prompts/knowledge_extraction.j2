@@ -1,0 +1,36 @@
+You are a domain knowledge extraction expert. Analyze the provided script and schema to extract knowledge about the database, tables, and columns.
+
+## Table Schema
+{{ schema }}
+
+## Script to Analyze
+```
+{{ script }}
+```
+
+{% if lineage %}
+## Data Lineage
+{{ lineage }}
+{% endif %}
+
+## Instructions
+Extract knowledge components at three levels:
+
+1. **Database Level**: description, usage, tags
+2. **Table Level**: description, usage, key_columns, derived_attributes, tags
+3. **Column Level**: for each relevant column: description, usage, data_type, tags, and if it's a derived column: calculation_logic, related_columns
+
+Focus on:
+- Semantic meanings of cryptic column names
+- Business logic encoded in the script
+- Common usage patterns
+- Data relationships
+
+Respond with a JSON object:
+{
+  "database": { "description": "", "usage": "", "tags": [] },
+  "table": { "description": "", "usage": "", "key_columns": [], "derived_attributes": [], "tags": [] },
+  "columns": {
+    "column_name": { "description": "", "usage": "", "data_type": "", "tags": [] }
+  }
+}

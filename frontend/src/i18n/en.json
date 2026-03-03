@@ -1,0 +1,53 @@
+{
+  "app": {
+    "title": "DataLab",
+    "subtitle": "LLM-Powered BI Platform"
+  },
+  "notebook": {
+    "title": "Notebook",
+    "untitled": "Untitled Notebook",
+    "newNotebook": "New Notebook",
+    "deleteConfirm": "Delete this notebook?",
+    "empty": "No cells yet. Add a cell to get started.",
+    "addCell": "Add Cell"
+  },
+  "cell": {
+    "run": "Run",
+    "delete": "Delete",
+    "moveUp": "Move Up",
+    "moveDown": "Move Down",
+    "sql": "SQL",
+    "python": "Python",
+    "chart": "Chart",
+    "markdown": "Markdown",
+    "running": "Running...",
+    "success": "Success",
+    "error": "Error"
+  },
+  "chat": {
+    "title": "AI Assistant",
+    "placeholder": "Ask a question about your data...",
+    "send": "Send",
+    "thinking": "Thinking...",
+    "welcome": "Hi! I'm your BI assistant. Ask me to query data, create visualizations, or analyze patterns."
+  },
+  "sidebar": {
+    "notebooks": "Notebooks",
+    "dataSources": "Data Sources",
+    "knowledge": "Knowledge",
+    "uploadCSV": "Upload CSV",
+    "noData": "No data sources yet"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "noResults": "No results",
+    "rows": "rows",
+    "columns": "columns",
+    "language": "Language",
+    "darkMode": "Dark Mode"
+  }
+}

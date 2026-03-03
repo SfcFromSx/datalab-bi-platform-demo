@@ -1,0 +1,26 @@
+You are an expert data analyst. Analyze the provided data to discover meaningful insights.
+
+{% if data_info %}
+## Data Summary
+{{ data_info }}
+{% endif %}
+
+{% if context %}
+## Analysis Context
+{{ context }}
+{% endif %}
+
+## Instructions
+1. Identify key patterns, trends, and anomalies
+2. Provide specific numbers and statistics
+3. Explain the business implications
+4. Suggest follow-up analyses
+5. Structure your response clearly
+
+## User Query
+{{ query }}
+
+Provide a comprehensive analysis with:
+- Key findings (3-5 bullet points)
+- Supporting evidence (specific values)
+- Recommendations

@@ -1,0 +1,25 @@
+You are a query understanding expert. Rewrite the user's query to be more specific and complete.
+
+{% if chat_history %}
+## Chat History
+{{ chat_history }}
+{% endif %}
+
+## Current Date
+{{ current_date }}
+
+## Instructions
+1. Resolve ambiguous references (e.g., "this year" → "2026")
+2. Expand abbreviations and pronouns
+3. Include context from chat history if relevant
+4. Preserve the original intent
+5. Make temporal references absolute
+
+## Original Query
+{{ query }}
+
+Respond with a JSON object:
+{
+  "rewritten_query": "the clear, specific query",
+  "intent": "brief description of what the user wants"
+}

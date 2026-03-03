@@ -1,0 +1,53 @@
+{
+  "app": {
+    "title": "DataLab",
+    "subtitle": "LLM 驱动的 BI 平台"
+  },
+  "notebook": {
+    "title": "笔记本",
+    "untitled": "未命名笔记本",
+    "newNotebook": "新建笔记本",
+    "deleteConfirm": "确定删除此笔记本？",
+    "empty": "暂无单元格，点击添加开始使用。",
+    "addCell": "添加单元格"
+  },
+  "cell": {
+    "run": "运行",
+    "delete": "删除",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "sql": "SQL",
+    "python": "Python",
+    "chart": "图表",
+    "markdown": "Markdown",
+    "running": "运行中...",
+    "success": "成功",
+    "error": "错误"
+  },
+  "chat": {
+    "title": "AI 助手",
+    "placeholder": "问一个关于数据的问题...",
+    "send": "发送",
+    "thinking": "思考中...",
+    "welcome": "你好！我是你的 BI 助手。可以帮你查询数据、创建可视化图表或分析数据模式。"
+  },
+  "sidebar": {
+    "notebooks": "笔记本列表",
+    "dataSources": "数据源",
+    "knowledge": "知识库",
+    "uploadCSV": "上传 CSV",
+    "noData": "暂无数据源"
+  },
+  "common": {
+    "save": "保存",
+    "cancel": "取消",
+    "delete": "删除",
+    "loading": "加载中...",
+    "error": "发生错误",
+    "noResults": "无结果",
+    "rows": "行",
+    "columns": "列",
+    "language": "语言",
+    "darkMode": "深色模式"
+  }
+}
