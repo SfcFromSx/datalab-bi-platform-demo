@@ -40,10 +40,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.api import agents, cells, datasources, knowledge, notebooks, websocket  # noqa: E402
+from app.api import agents, cells, datasources, folders, knowledge, notebooks, websocket  # noqa: E402
 
 app.include_router(notebooks.router, prefix="/api")
 app.include_router(cells.router, prefix="/api")
+app.include_router(folders.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(knowledge.router, prefix="/api")
 app.include_router(datasources.router, prefix="/api")

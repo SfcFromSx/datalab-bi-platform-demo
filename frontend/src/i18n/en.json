@@ -38,6 +38,13 @@
     "uploadCSV": "Upload CSV",
     "noData": "No data sources yet"
   },
+  "folder": {
+    "newFolder": "New Folder",
+    "deleteConfirm": "Delete this folder? Notebooks will be moved to uncategorized.",
+    "uncategorized": "Uncategorized",
+    "moveTo": "Move to folder",
+    "removeFromFolder": "Remove from folder"
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",

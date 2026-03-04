@@ -4,7 +4,10 @@ from pathlib import Path
 from typing import List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from dotenv import load_dotenv
 
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(env_path)
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

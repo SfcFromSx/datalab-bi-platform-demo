@@ -1,5 +1,6 @@
 from app.models.cell import Cell, CellType
 from app.models.datasource import DataSource, DataSourceType
+from app.models.folder import Folder
 from app.models.knowledge import KnowledgeNode, KnowledgeNodeType
 from app.models.notebook import Notebook
 
@@ -9,6 +10,7 @@ __all__ = [
     "CellType",
     "DataSource",
     "DataSourceType",
+    "Folder",
     "KnowledgeNode",
     "KnowledgeNodeType",
 ]

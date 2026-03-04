@@ -14,6 +14,7 @@ class NotebookCreate(BaseModel):
 class NotebookUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
+    folder_id: Optional[str] = None
 
 
 class CellResponse(BaseModel):
@@ -34,6 +35,7 @@ class NotebookResponse(BaseModel):
     id: str
     title: str
     description: str
+    folder_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     cells: list[CellResponse] = []
@@ -45,6 +47,7 @@ class NotebookListResponse(BaseModel):
     id: str
     title: str
     description: str
+    folder_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     cell_count: int = 0

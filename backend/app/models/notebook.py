@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, String, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -25,6 +25,11 @@ class Notebook(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
+    folder_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("folders.id"), nullable=True, default=None
+    )
+
+    folder = relationship("Folder", back_populates="notebooks")
 
     cells: Mapped[list["Cell"]] = relationship(  # noqa: F821
         "Cell",

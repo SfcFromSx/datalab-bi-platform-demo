@@ -38,6 +38,13 @@
     "uploadCSV": "上传 CSV",
     "noData": "暂无数据源"
   },
+  "folder": {
+    "newFolder": "新建文件夹",
+    "deleteConfirm": "确定删除此文件夹？笔记本将移至未分类。",
+    "uncategorized": "未分类",
+    "moveTo": "移动到文件夹",
+    "removeFromFolder": "从文件夹移出"
+  },
   "common": {
     "save": "保存",
     "cancel": "取消",

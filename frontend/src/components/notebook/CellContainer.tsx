@@ -15,7 +15,8 @@ interface Props {
 
 export default function CellContainer({ cell, index, totalCells }: Props) {
   const [isRunning, setIsRunning] = useState(false);
-  const { executeCell, deleteCell, moveCell, updateCellSource } = useNotebookStore();
+  const [isEditingAI, setIsEditingAI] = useState(false);
+  const { executeCell, deleteCell, moveCell, updateCellSource, editCellWithAI } = useNotebookStore();
 
   const handleRun = async () => {
     setIsRunning(true);
@@ -23,6 +24,15 @@ export default function CellContainer({ cell, index, totalCells }: Props) {
       await executeCell(cell.id, cell.source);
     } finally {
       setIsRunning(false);
+    }
+  };
+
+  const handleEditAI = async (prompt: string) => {
+    setIsEditingAI(true);
+    try {
+      await editCellWithAI(cell.id, prompt);
+    } finally {
+      setIsEditingAI(false);
     }
   };
 
@@ -51,10 +61,12 @@ export default function CellContainer({ cell, index, totalCells }: Props) {
       <CellToolbar
         cellType={cell.cell_type}
         isRunning={isRunning}
+        isEditingAI={isEditingAI}
         onRun={handleRun}
         onDelete={handleDelete}
         onMoveUp={handleMoveUp}
         onMoveDown={handleMoveDown}
+        onEditAI={handleEditAI}
         isFirst={index === 0}
         isLast={index === totalCells - 1}
       />

@@ -16,6 +16,11 @@ from app.schemas import (
     CellMoveRequest,
     CellUpdate,
 )
+from pydantic import BaseModel
+
+class CellEditRequest(BaseModel):
+    prompt: str
+
 from app.schemas.notebook import CellResponse
 
 router = APIRouter(tags=["cells"])
@@ -130,3 +135,34 @@ async def execute_cell(
         status=output.get("status", "error"),
         output=output,
     )
+
+from fastapi.responses import StreamingResponse
+from app.llm.client import llm_client
+
+@router.post("/cells/{cell_id}/edit-with-ai")
+async def edit_cell_with_ai(
+    cell_id: str,
+    data: CellEditRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    cell = await session.get(Cell, cell_id)
+    if not cell:
+        raise HTTPException(status_code=404, detail="Cell not found")
+
+    sys_prompt = f"You are an expert AI assistant that edits {cell.cell_type} code within a data notebook. Provide ONLY the modified raw {cell.cell_type} code. Do NOT wrap the output in markdown code blocks like ```sql or ```python. Do NOT provide any conversational text or explanations. Your entire response must be the exact raw code to replace the cell's contents."
+    
+    user_prompt = f"Current code:\n{cell.source}\n\nUser request: {data.prompt}"
+
+    messages = [
+        {"role": "system", "content": sys_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    async def stream_generator():
+        try:
+            async for chunk in llm_client.stream(messages=messages, temperature=0.1, max_tokens=4096):
+                yield chunk
+        except Exception as e:
+            yield str(e)
+
+    return StreamingResponse(stream_generator(), media_type="text/event-stream")

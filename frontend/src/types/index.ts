@@ -35,6 +35,7 @@ export interface Notebook {
   id: string;
   title: string;
   description: string;
+  folder_id: string | null;
   created_at: string;
   updated_at: string;
   cells: Cell[];
@@ -44,9 +45,17 @@ export interface NotebookListItem {
   id: string;
   title: string;
   description: string;
+  folder_id: string | null;
   created_at: string;
   updated_at: string;
   cell_count: number;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  position: number;
+  created_at: string;
 }
 
 export interface DataSource {

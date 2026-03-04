@@ -12,7 +12,7 @@ export default function MainLayout() {
   const { activeNotebook } = useNotebookStore();
   const [selectedNotebookId, setSelectedNotebookId] = useState<string | null>(null);
 
-  const handleSelectNotebook = (id: string) => {
+  const handleSelectNotebook = (id: string | null) => {
     setSelectedNotebookId(id);
   };
 

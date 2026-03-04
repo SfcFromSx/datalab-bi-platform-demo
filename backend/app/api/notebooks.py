@@ -30,6 +30,7 @@ async def list_notebooks(session: AsyncSession = Depends(get_session)):
                 id=nb.id,
                 title=nb.title,
                 description=nb.description,
+                folder_id=nb.folder_id,
                 created_at=nb.created_at,
                 updated_at=nb.updated_at,
                 cell_count=cell_count,
@@ -79,6 +80,8 @@ async def update_notebook(
         notebook.title = data.title
     if data.description is not None:
         notebook.description = data.description
+    if data.folder_id is not None:
+        notebook.folder_id = data.folder_id if data.folder_id != "" else None
 
     await session.flush()
     await session.refresh(notebook)
