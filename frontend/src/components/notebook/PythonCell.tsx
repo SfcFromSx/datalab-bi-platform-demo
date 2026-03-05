@@ -12,8 +12,11 @@ export default function PythonCell({ cell, onChange }: Props) {
 
   return (
     <div>
-      <div className="border-b border-gray-100 dark:border-gray-800">
+      <div className="border-b border-gray-100 dark:border-gray-800 relative">
         <MonacoEditor value={cell.source} onChange={onChange} language="python" height="160px" readOnly={true} />
+        <span className="absolute top-2 right-3 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 font-medium pointer-events-none select-none">
+          🔒 AI-edit only
+        </span>
       </div>
       {output && (
         <div className="p-3 space-y-2">

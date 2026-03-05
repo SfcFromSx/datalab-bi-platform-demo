@@ -58,11 +58,13 @@ export default function MonacoEditor({
         theme={theme}
         options={{
           readOnly,
+          domReadOnly: readOnly,
           minimap: { enabled: false },
           fontSize: 13,
           lineNumbers: 'on',
           scrollBeyondLastLine: false,
           wordWrap: 'on',
+          cursorStyle: readOnly ? 'underline-thin' : 'line',
         }}
       />
       {/* Drag-to-resize handle */}
