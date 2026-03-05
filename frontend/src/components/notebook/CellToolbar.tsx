@@ -45,7 +45,7 @@ export default function CellToolbar({
           {t(`cell.${cellType}`)}
         </span>
         <div className="flex-1" />
-        {onEditAI && cellType !== 'python' && (
+        {onEditAI && (
           <button
             onClick={() => setShowAIInput(!showAIInput)}
             className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${showAIInput || isEditingAI ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300' : 'text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700'}`}

@@ -13,7 +13,7 @@ export default function PythonCell({ cell, onChange }: Props) {
   return (
     <div>
       <div className="border-b border-gray-100 dark:border-gray-800">
-        <MonacoEditor value={cell.source} onChange={onChange} language="python" height="160px" />
+        <MonacoEditor value={cell.source} onChange={onChange} language="python" height="160px" readOnly={true} />
       </div>
       {output && (
         <div className="p-3 space-y-2">
