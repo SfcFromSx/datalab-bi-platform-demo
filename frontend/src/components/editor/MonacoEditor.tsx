@@ -1,4 +1,4 @@
-import Editor from '@monaco-editor/react';
+import Editor, { type OnMount } from '@monaco-editor/react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useUIStore } from '../../stores/uiStore';
 
@@ -24,9 +24,18 @@ export default function MonacoEditor({
   const initialPx = parseInt(height, 10) || 200;
   const [editorHeight, setEditorHeight] = useState(initialPx);
   const containerRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<any>(null);
   const dragging = useRef(false);
   const startY = useRef(0);
   const startH = useRef(0);
+
+  const handleEditorMount: OnMount = useCallback((editor) => {
+    editorRef.current = editor;
+    editor.updateOptions({
+      readOnly,
+      domReadOnly: readOnly,
+    });
+  }, [readOnly]);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -54,8 +63,11 @@ export default function MonacoEditor({
         height={`${editorHeight}px`}
         language={language}
         value={value}
-        onChange={(v) => onChange(v ?? '')}
+        onChange={(v) => {
+          if (!readOnly) onChange(v ?? '');
+        }}
         theme={theme}
+        onMount={handleEditorMount}
         options={{
           readOnly,
           domReadOnly: readOnly,
