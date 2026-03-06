@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum as PyEnum
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -27,6 +27,9 @@ class Cell(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
     notebook_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("notebooks.id", ondelete="CASCADE")
     )
@@ -40,6 +43,7 @@ class Cell(Base):
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
 
+    workspace: Mapped["Workspace"] = relationship("Workspace", back_populates="cells")  # noqa: F821
     notebook: Mapped["Notebook"] = relationship("Notebook", back_populates="cells")  # noqa: F821
 
     def __repr__(self) -> str:

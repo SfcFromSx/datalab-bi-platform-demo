@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 class DAGNode:
     cell_id: str
     cell_type: str
+    position: int
     variables_defined: set[str] = field(default_factory=set)
     variables_referenced: set[str] = field(default_factory=set)
     ancestors: set[str] = field(default_factory=set)
@@ -33,80 +34,70 @@ class CellDependencyDAG:
     def __init__(self):
         self._nodes: dict[str, DAGNode] = {}
         self._var_to_cell: dict[str, str] = {}
+        self._cell_order: list[str] = []
+        self._cells_snapshot: list[dict] = []
 
     def build(self, cells: list[dict]) -> None:
         self._nodes.clear()
         self._var_to_cell.clear()
+        self._cell_order.clear()
+        ordered_cells = sorted(cells, key=lambda item: item.get("position", 0))
+        self._cells_snapshot = [dict(cell) for cell in ordered_cells]
 
-        for cell in cells:
+        latest_definitions: dict[str, str] = {}
+        for cell in ordered_cells:
             cell_id = cell["id"]
             cell_type = cell["cell_type"]
             source = cell.get("source", "")
+            position = cell.get("position", 0)
 
             cv = variable_tracker.analyze_cell(cell_id, cell_type, source)
             node = DAGNode(
                 cell_id=cell_id,
                 cell_type=cell_type,
+                position=position,
                 variables_defined=cv.defined,
                 variables_referenced=cv.referenced,
             )
-            self._nodes[cell_id] = node
 
-            for var in cv.defined:
-                self._var_to_cell[var] = cell_id
-
-        for cell_id, node in self._nodes.items():
-            for ref_var in node.variables_referenced:
-                defining_cell = self._var_to_cell.get(ref_var)
+            for ref_var in sorted(cv.referenced):
+                defining_cell = latest_definitions.get(ref_var)
                 if defining_cell and defining_cell != cell_id:
                     node.ancestors.add(defining_cell)
                     self._nodes[defining_cell].descendants.add(cell_id)
 
+            self._nodes[cell_id] = node
+            self._cell_order.append(cell_id)
+
+            for var in sorted(cv.defined):
+                latest_definitions[var] = cell_id
+
+        self._var_to_cell = latest_definitions.copy()
+
     def update_cell(self, cell_id: str, cell_type: str, source: str) -> None:
-        if cell_id in self._nodes:
-            old_node = self._nodes[cell_id]
-            for anc in old_node.ancestors:
-                if anc in self._nodes:
-                    self._nodes[anc].descendants.discard(cell_id)
-            for desc in old_node.descendants:
-                if desc in self._nodes:
-                    self._nodes[desc].ancestors.discard(cell_id)
-            for var, cid in list(self._var_to_cell.items()):
-                if cid == cell_id:
-                    del self._var_to_cell[var]
-
-        cv = variable_tracker.analyze_cell(cell_id, cell_type, source)
-        node = DAGNode(
-            cell_id=cell_id,
-            cell_type=cell_type,
-            variables_defined=cv.defined,
-            variables_referenced=cv.referenced,
-        )
-        self._nodes[cell_id] = node
-
-        for var in cv.defined:
-            self._var_to_cell[var] = cell_id
-
-        for ref_var in node.variables_referenced:
-            defining_cell = self._var_to_cell.get(ref_var)
-            if defining_cell and defining_cell != cell_id:
-                node.ancestors.add(defining_cell)
-                self._nodes[defining_cell].descendants.add(cell_id)
+        updated = False
+        for cell in self._cells_snapshot:
+            if cell["id"] == cell_id:
+                cell["cell_type"] = cell_type
+                cell["source"] = source
+                updated = True
+                break
+        if not updated:
+            self._cells_snapshot.append(
+                {
+                    "id": cell_id,
+                    "cell_type": cell_type,
+                    "source": source,
+                    "position": len(self._cells_snapshot),
+                }
+            )
+        self.build(self._cells_snapshot)
 
     def remove_cell(self, cell_id: str) -> None:
-        if cell_id not in self._nodes:
-            return
-        node = self._nodes[cell_id]
-        for anc in node.ancestors:
-            if anc in self._nodes:
-                self._nodes[anc].descendants.discard(cell_id)
-        for desc in node.descendants:
-            if desc in self._nodes:
-                self._nodes[desc].ancestors.discard(cell_id)
-        for var, cid in list(self._var_to_cell.items()):
-            if cid == cell_id:
-                del self._var_to_cell[var]
-        del self._nodes[cell_id]
+        self._cells_snapshot = [
+            cell for cell in self._cells_snapshot if cell["id"] != cell_id
+        ]
+        self.build(self._cells_snapshot)
 
     def get_ancestors(self, cell_id: str) -> set[str]:
         visited: set[str] = set()
@@ -143,10 +134,34 @@ class CellDependencyDAG:
     def get_node(self, cell_id: str) -> Optional[DAGNode]:
         return self._nodes.get(cell_id)
 
+    def get_direct_dependencies(self, cell_id: str) -> list[str]:
+        node = self._nodes.get(cell_id)
+        if not node:
+            return []
+        return sorted(
+            node.ancestors,
+            key=lambda dependency_id: self._nodes[dependency_id].position,
+        )
+
+    def get_direct_descendants(self, cell_id: str) -> list[str]:
+        node = self._nodes.get(cell_id)
+        if not node:
+            return []
+        return sorted(
+            node.descendants,
+            key=lambda dependency_id: self._nodes[dependency_id].position,
+        )
+
+    def get_execution_plan(self, cell_id: str) -> list[str]:
+        active_cells = self.get_ancestors(cell_id)
+        active_cells.add(cell_id)
+        return [candidate for candidate in self._cell_order if candidate in active_cells]
+
     def to_dict(self) -> dict:
         return {
             cell_id: {
                 "cell_type": node.cell_type,
+                "position": node.position,
                 "defined": list(node.variables_defined),
                 "referenced": list(node.variables_referenced),
                 "ancestors": list(node.ancestors),

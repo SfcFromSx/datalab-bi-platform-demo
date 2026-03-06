@@ -2,6 +2,8 @@ import { useState } from 'react';
 import type { Cell } from '../../types';
 import { useNotebookStore } from '../../stores/notebookStore';
 import CellToolbar from './CellToolbar';
+import CellGenerationPanel from './CellGenerationPanel';
+import CellAgentRuntimeCard from './CellAgentRuntimeCard';
 import SqlCell from './SqlCell';
 import PythonCell from './PythonCell';
 import ChartCell from './ChartCell';
@@ -15,8 +17,17 @@ interface Props {
 
 export default function CellContainer({ cell, index, totalCells }: Props) {
   const [isRunning, setIsRunning] = useState(false);
-  const [isEditingAI, setIsEditingAI] = useState(false);
-  const { executeCell, deleteCell, moveCell, updateCellSource, editCellWithAI } = useNotebookStore();
+  const {
+    executeCell,
+    deleteCell,
+    moveCell,
+    updateCellSource,
+    editCellWithAI,
+    clearCellAIState,
+    aiEditStateByCellId,
+  } = useNotebookStore();
+  const aiState = aiEditStateByCellId[cell.id];
+  const isEditingAI = aiState?.status === 'generating';
 
   const handleRun = async () => {
     setIsRunning(true);
@@ -28,12 +39,7 @@ export default function CellContainer({ cell, index, totalCells }: Props) {
   };
 
   const handleEditAI = async (prompt: string) => {
-    setIsEditingAI(true);
-    try {
-      await editCellWithAI(cell.id, prompt);
-    } finally {
-      setIsEditingAI(false);
-    }
+    await editCellWithAI(cell.id, prompt);
   };
 
   const handleDelete = () => deleteCell(cell.id);
@@ -57,20 +63,30 @@ export default function CellContainer({ cell, index, totalCells }: Props) {
   };
 
   return (
-    <div className="group border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-900 shadow-sm hover:shadow-md transition-shadow">
-      <CellToolbar
-        cellType={cell.cell_type}
-        isRunning={isRunning}
-        isEditingAI={isEditingAI}
-        onRun={handleRun}
-        onDelete={handleDelete}
-        onMoveUp={handleMoveUp}
-        onMoveDown={handleMoveDown}
-        onEditAI={handleEditAI}
-        isFirst={index === 0}
-        isLast={index === totalCells - 1}
-      />
-      {renderCell()}
+    <div className="group overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm transition-shadow hover:shadow-md dark:border-gray-700 dark:bg-gray-900 lg:flex">
+      <div className="min-w-0 flex-1">
+        <CellToolbar
+          cellType={cell.cell_type}
+          isRunning={isRunning}
+          isEditingAI={isEditingAI}
+          aiProgress={aiState?.progress}
+          onRun={handleRun}
+          onDelete={handleDelete}
+          onMoveUp={handleMoveUp}
+          onMoveDown={handleMoveDown}
+          onEditAI={handleEditAI}
+          isFirst={index === 0}
+          isLast={index === totalCells - 1}
+        />
+        {renderCell()}
+        {cell.output?.agent && <CellAgentRuntimeCard runtime={cell.output.agent} />}
+      </div>
+      {aiState && (
+        <CellGenerationPanel
+          state={aiState}
+          onClose={() => clearCellAIState(cell.id)}
+        />
+      )}
     </div>
   );
 }

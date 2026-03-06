@@ -14,6 +14,7 @@ interface Props {
   cellType: CellType;
   isRunning?: boolean;
   isEditingAI?: boolean;
+  aiProgress?: number;
   onRun: () => void;
   onDelete: () => void;
   onMoveUp: () => void;
@@ -24,7 +25,7 @@ interface Props {
 }
 
 export default function CellToolbar({
-  cellType, isRunning, isEditingAI, onRun, onDelete, onMoveUp, onMoveDown, onEditAI, isFirst, isLast,
+  cellType, isRunning, isEditingAI, aiProgress, onRun, onDelete, onMoveUp, onMoveDown, onEditAI, isFirst, isLast,
 }: Props) {
   const { t } = useTranslation();
   const [showAIInput, setShowAIInput] = useState(false);
@@ -52,7 +53,7 @@ export default function CellToolbar({
             title="Edit Cell with AI"
           >
             <Sparkles size={12} className={isEditingAI ? "animate-pulse" : ""} />
-            {isEditingAI ? 'Generating...' : 'AI Edit'}
+            {isEditingAI ? `AI ${Math.round((aiProgress ?? 0) * 100)}%` : 'AI Edit'}
           </button>
         )}
         <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-1" />
@@ -62,12 +63,10 @@ export default function CellToolbar({
         <button onClick={onMoveDown} disabled={isLast} className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 disabled:opacity-30 transition-colors" title={t('cell.moveDown')}>
           <ChevronDown size={14} />
         </button>
-        {cellType !== 'chart' && (
-          <button onClick={onRun} disabled={isRunning} className="flex items-center gap-1 px-2 py-1 flex-shrink-0 rounded text-xs font-medium bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 transition-colors">
-            <Play size={12} />
-            {isRunning ? t('cell.running') : t('cell.run')}
-          </button>
-        )}
+        <button onClick={onRun} disabled={isRunning} className="flex items-center gap-1 px-2 py-1 flex-shrink-0 rounded text-xs font-medium bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 transition-colors">
+          <Play size={12} />
+          {isRunning ? t('cell.running') : t('cell.run')}
+        </button>
         <button onClick={onDelete} className="p-1 rounded text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors" title={t('cell.delete')}>
           <Trash2 size={14} />
         </button>

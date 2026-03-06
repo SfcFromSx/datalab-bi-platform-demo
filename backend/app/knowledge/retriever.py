@@ -9,7 +9,7 @@ Implements Algorithm 2 from the DataLab paper:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,8 +37,14 @@ class KnowledgeRetriever:
         query: str,
         datasource_id: Optional[str] = None,
         top_k: int = 10,
+        workspace_id: Optional[str] = None,
     ) -> list[tuple[KnowledgeNode, float]]:
-        coarse_nodes = await self._coarse_retrieval(session, query, datasource_id)
+        coarse_nodes = await self._coarse_retrieval(
+            session,
+            query,
+            datasource_id,
+            workspace_id=workspace_id,
+        )
 
         if not coarse_nodes:
             return []
@@ -46,7 +52,11 @@ class KnowledgeRetriever:
         primary_nodes = []
         for node in coarse_nodes:
             if node.node_type == KnowledgeNodeType.ALIAS and node.parent_id:
-                parent = await knowledge_graph.get_node(session, node.parent_id)
+                parent = await knowledge_graph.get_node(
+                    session,
+                    node.parent_id,
+                    workspace_id=workspace_id,
+                )
                 if parent:
                     primary_nodes.append(parent)
             else:
@@ -69,12 +79,22 @@ class KnowledgeRetriever:
         session: AsyncSession,
         query: str,
         datasource_id: Optional[str] = None,
+        workspace_id: Optional[str] = None,
     ) -> list[KnowledgeNode]:
         """Lexical + semantic search for initial candidate set."""
-        lexical_results = await knowledge_graph.search_by_name(session, query, limit=50)
+        lexical_results = await knowledge_graph.search_by_name(
+            session,
+            query,
+            limit=50,
+            workspace_id=workspace_id,
+        )
 
         if datasource_id:
-            ds_nodes = await knowledge_graph.get_nodes_by_datasource(session, datasource_id)
+            ds_nodes = await knowledge_graph.get_nodes_by_datasource(
+                session,
+                datasource_id,
+                workspace_id=workspace_id,
+            )
             name_matches = [
                 n for n in ds_nodes
                 if any(
@@ -140,18 +160,20 @@ class KnowledgeRetriever:
 
     async def _llm_score(self, query: str, node: KnowledgeNode) -> float:
         """LLM-based relevance scoring."""
-        import json
 
         node_info = f"Name: {node.name}, Type: {node.node_type.value}"
         if node.components:
             node_info += f", Description: {node.components.get('description', 'N/A')}"
 
-        prompt = f"""Rate the relevance of this knowledge node to the query on a scale of 0.0 to 1.0.
+        prompt = """Rate the relevance of this knowledge node to the query on a scale of 0.0 to 1.0.
 
 Query: {query}
 Node: {node_info}
 
-Respond with ONLY a JSON object: {{"score": <0.0-1.0>}}"""
+Respond with ONLY a JSON object: {{"score": <0.0-1.0>}}""".format(
+            query=query,
+            node_info=node_info,
+        )
 
         try:
             result = await self.llm.complete_json(

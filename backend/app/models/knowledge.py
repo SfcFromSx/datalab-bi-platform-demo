@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum as PyEnum
 
-from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -39,6 +39,9 @@ class KnowledgeNode(Base):
     datasource_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("datasources.id", ondelete="SET NULL"), nullable=True
     )
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
@@ -47,6 +50,7 @@ class KnowledgeNode(Base):
     parent: Mapped[KnowledgeNode | None] = relationship(
         "KnowledgeNode", remote_side=[id], backref="children"
     )
+    workspace = relationship("Workspace", back_populates="knowledge_nodes")
 
     def __repr__(self) -> str:
         return f"<KnowledgeNode {self.id[:8]} {self.node_type.value}:'{self.name}'>"

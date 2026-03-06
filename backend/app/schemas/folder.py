@@ -17,6 +17,7 @@ class FolderUpdate(BaseModel):
 
 class FolderResponse(BaseModel):
     id: str
+    workspace_id: str
     name: str
     position: int
     created_at: datetime

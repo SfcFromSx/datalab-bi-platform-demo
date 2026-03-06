@@ -31,3 +31,4 @@ class CellExecuteResponse(BaseModel):
     cell_id: str
     status: str  # "success" | "error"
     output: dict
+    executed_cells: list[dict] = []

@@ -24,7 +24,11 @@ export default function MarkdownCell({ cell, onChange }: Props) {
 
   return (
     <div onDoubleClick={() => setEditing(true)} className="p-4 prose dark:prose-invert prose-sm max-w-none cursor-text min-h-[60px]">
-      {cell.source ? <ReactMarkdown>{cell.source}</ReactMarkdown> : <p className="text-gray-400 italic">Double-click to edit...</p>}
+      {cell.source ? (
+        <ReactMarkdown>{cell.output?.html ?? cell.source}</ReactMarkdown>
+      ) : (
+        <p className="text-gray-400 italic">Double-click to edit...</p>
+      )}
     </div>
   );
 }

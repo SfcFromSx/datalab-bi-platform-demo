@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Cell, CellType, Folder, Notebook, NotebookListItem } from '../types';
+import type { Cell, CellAIState, CellType, Folder, Notebook, NotebookListItem } from '../types';
 import {
   listNotebooks,
   createNotebook as createNotebookApi,
@@ -23,6 +23,7 @@ interface NotebookState {
   folders: Folder[];
   activeNotebook: Notebook | null;
   cells: Cell[];
+  aiEditStateByCellId: Record<string, CellAIState>;
   loading: boolean;
   error: string | null;
 }
@@ -45,6 +46,7 @@ interface NotebookActions {
   moveCell: (cellId: string, position: number) => Promise<void>;
   executeCell: (cellId: string, source?: string) => Promise<void>;
   editCellWithAI: (cellId: string, prompt: string) => Promise<void>;
+  clearCellAIState: (cellId: string) => void;
   setCells: (cells: Cell[]) => void;
 }
 
@@ -53,6 +55,7 @@ export const useNotebookStore = create<NotebookState & NotebookActions>((set, ge
   folders: [],
   activeNotebook: null,
   cells: [],
+  aiEditStateByCellId: {},
   loading: false,
   error: null,
 
@@ -72,14 +75,10 @@ export const useNotebookStore = create<NotebookState & NotebookActions>((set, ge
   createNotebook: async (title = 'Untitled Notebook', description = '', folderId?: string) => {
     set({ loading: true, error: null });
     try {
-      const notebook = await createNotebookApi(title, description);
-      // If folderId provided, move notebook to folder immediately
-      if (folderId) {
-        await moveNotebookToFolderApi(notebook.id, folderId);
-        notebook.folder_id = folderId;
-      }
+      const notebook = await createNotebookApi(title, description, folderId);
       const listItem: NotebookListItem = {
         id: notebook.id,
+        workspace_id: notebook.workspace_id,
         title: notebook.title,
         description: notebook.description,
         folder_id: notebook.folder_id ?? null,
@@ -91,6 +90,7 @@ export const useNotebookStore = create<NotebookState & NotebookActions>((set, ge
         notebooks: [listItem, ...s.notebooks],
         activeNotebook: notebook,
         cells: notebook.cells ?? [],
+        aiEditStateByCellId: {},
         loading: false,
       }));
       return notebook;
@@ -112,6 +112,7 @@ export const useNotebookStore = create<NotebookState & NotebookActions>((set, ge
         notebooks: s.notebooks.filter((nb) => nb.id !== id),
         activeNotebook: activeNotebook?.id === id ? null : s.activeNotebook,
         cells: activeNotebook?.id === id ? [] : s.cells,
+        aiEditStateByCellId: activeNotebook?.id === id ? {} : s.aiEditStateByCellId,
         loading: false,
       }));
     } catch (e) {
@@ -169,6 +170,7 @@ export const useNotebookStore = create<NotebookState & NotebookActions>((set, ge
       set({
         activeNotebook: notebook,
         cells: notebook.cells ?? [],
+        aiEditStateByCellId: {},
         loading: false,
       });
     } catch (e) {
@@ -217,31 +219,117 @@ export const useNotebookStore = create<NotebookState & NotebookActions>((set, ge
 
   editCellWithAI: async (cellId: string, prompt: string) => {
     set({ error: null });
+    const originalSource = get().cells.find((cell) => cell.id === cellId)?.source ?? '';
     try {
-      // Create a temporary backup of old source in case of failure? (Ignoring for now)
       set((s) => ({
-        cells: s.cells.map((c) => (c.id === cellId ? { ...c, source: '' } : c)),
+        aiEditStateByCellId: {
+          ...s.aiEditStateByCellId,
+          [cellId]: {
+            status: 'generating',
+            stage: 'context',
+            message: 'Starting AI rewrite',
+            progress: 0.02,
+            draft: '',
+            details: null,
+            error: null,
+          },
+        },
       }));
 
-      await import('../services/api').then((api) => api.editCellWithAIStream(
-        cellId,
-        prompt,
-        (chunk) => {
+      await import('../services/api').then((api) => api.editCellWithAIStream(cellId, prompt, {
+        onProgress: (payload) => {
           set((s) => ({
-            cells: s.cells.map((c) =>
-              c.id === cellId ? { ...c, source: c.source + chunk } : c
-            ),
+            aiEditStateByCellId: {
+              ...s.aiEditStateByCellId,
+              [cellId]: {
+                ...(s.aiEditStateByCellId[cellId] ?? {
+                  status: 'generating',
+                  draft: '',
+                  error: null,
+                }),
+                status: 'generating',
+                stage: payload.stage,
+                message: payload.message,
+                progress: payload.progress,
+                details: payload.details ?? s.aiEditStateByCellId[cellId]?.details ?? null,
+              },
+            },
           }));
-        }
-      ));
-
-      // Save full result at the end
-      const finalCell = get().cells.find(c => c.id === cellId);
-      if (finalCell) {
-        await updateCellApi(cellId, finalCell.source);
-      }
+        },
+        onChunk: ({ content }) => {
+          set((s) => ({
+            aiEditStateByCellId: {
+              ...s.aiEditStateByCellId,
+              [cellId]: {
+                ...(s.aiEditStateByCellId[cellId] ?? {
+                  status: 'generating',
+                  stage: 'generate',
+                  message: 'Streaming draft',
+                  progress: 0.35,
+                  draft: '',
+                  error: null,
+                }),
+                status: 'generating',
+                draft: (s.aiEditStateByCellId[cellId]?.draft ?? '') + content,
+              },
+            },
+          }));
+        },
+        onDone: async ({ content, progress, message, details }) => {
+          const savedCell = await updateCellApi(cellId, content);
+          set((s) => ({
+            cells: s.cells.map((cell) => (cell.id === cellId ? savedCell : cell)),
+            aiEditStateByCellId: {
+              ...s.aiEditStateByCellId,
+              [cellId]: {
+                status: 'completed',
+                stage: 'done',
+                message,
+                progress,
+                draft: content,
+                details,
+                error: null,
+              },
+            },
+          }));
+        },
+        onError: ({ message, details }) => {
+          set((s) => ({
+            aiEditStateByCellId: {
+              ...s.aiEditStateByCellId,
+              [cellId]: {
+                ...(s.aiEditStateByCellId[cellId] ?? {
+                  stage: 'error',
+                  progress: 1,
+                  draft: originalSource,
+                }),
+                status: 'error',
+                stage: 'error',
+                message,
+                progress: 1,
+                details: details ?? s.aiEditStateByCellId[cellId]?.details ?? null,
+                error: message,
+              },
+            },
+            error: message,
+          }));
+        },
+      }));
     } catch (e) {
-      set({ error: e instanceof Error ? e.message : 'AI Edit failed' });
+      set((s) => ({
+        aiEditStateByCellId: {
+          ...s.aiEditStateByCellId,
+          [cellId]: {
+            status: 'error',
+            stage: 'error',
+            message: e instanceof Error ? e.message : 'AI Edit failed',
+            progress: 1,
+            draft: originalSource,
+            error: e instanceof Error ? e.message : 'AI Edit failed',
+          },
+        },
+        error: e instanceof Error ? e.message : 'AI Edit failed',
+      }));
     }
   },
 
@@ -282,9 +370,16 @@ export const useNotebookStore = create<NotebookState & NotebookActions>((set, ge
     try {
       const result = await executeCellApi(cellId, source);
       set((s) => ({
-        cells: s.cells.map((c) =>
-          c.id === cellId ? { ...c, output: result.output as unknown as Cell['output'] } : c
-        ),
+        cells: s.cells.map((c) => {
+          const executedCell = result.executed_cells.find((item) => item.cell_id === c.id);
+          if (executedCell) {
+            return { ...c, output: executedCell.output };
+          }
+          if (c.id === cellId) {
+            return { ...c, output: result.output };
+          }
+          return c;
+        }),
         loading: false,
       }));
     } catch (e) {
@@ -298,6 +393,13 @@ export const useNotebookStore = create<NotebookState & NotebookActions>((set, ge
       }));
     }
   },
+
+  clearCellAIState: (cellId: string) =>
+    set((s) => {
+      const next = { ...s.aiEditStateByCellId };
+      delete next[cellId];
+      return { aiEditStateByCellId: next };
+    }),
 
   setCells: (cells: Cell[]) => set({ cells }),
 

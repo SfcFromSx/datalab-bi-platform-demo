@@ -7,10 +7,10 @@ For SQL cells: Tracks SELECT output as a data variable.
 from __future__ import annotations
 
 import ast
+import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +31,13 @@ class VariableTracker:
     def analyze_cell(self, cell_id: str, cell_type: str, source: str) -> CellVariables:
         if cell_type == "python":
             return self._analyze_python(cell_id, source)
-        elif cell_type == "sql":
+        if cell_type == "sql":
             return self._analyze_sql(cell_id, source)
-        elif cell_type == "chart":
+        if cell_type == "chart":
             return self._analyze_chart(cell_id, source)
-        else:
-            return CellVariables(cell_id=cell_id, cell_type=cell_type)
+        if cell_type == "markdown":
+            return self._analyze_markdown(cell_id, source)
+        return CellVariables(cell_id=cell_id, cell_type=cell_type)
 
     def _analyze_python(self, cell_id: str, source: str) -> CellVariables:
         """Parse Python AST to find global variable definitions and external references."""
@@ -81,7 +82,10 @@ class VariableTracker:
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
                 all_names.add(node.id)
 
-        builtins_set = set(dir(__builtins__)) if isinstance(__builtins__, dict) else set(dir(__builtins__))
+        if isinstance(__builtins__, dict):
+            builtins_set = set(dir(__builtins__))
+        else:
+            builtins_set = set(dir(__builtins__))
         result.referenced = all_names - result.defined - builtins_set
 
         return result
@@ -108,9 +112,35 @@ class VariableTracker:
         """Chart cells reference a data variable."""
         result = CellVariables(cell_id=cell_id, cell_type="chart")
 
+        try:
+            spec = json.loads(source)
+        except json.JSONDecodeError:
+            spec = None
+
+        if isinstance(spec, dict):
+            for key in ("data_source", "source_variable"):
+                value = spec.get(key)
+                if isinstance(value, str) and value:
+                    result.referenced.add(value)
+
+            dataset = spec.get("dataset")
+            if isinstance(dataset, dict):
+                variable = dataset.get("sourceVariable")
+                if isinstance(variable, str) and variable:
+                    result.referenced.add(variable)
+
         data_match = re.search(r'data[_-]?source\s*[:=]\s*["\']?(\w+)', source, re.IGNORECASE)
         if data_match:
             result.referenced.add(data_match.group(1))
+
+        return result
+
+    def _analyze_markdown(self, cell_id: str, source: str) -> CellVariables:
+        """Markdown cells can reference notebook variables via handlebars-style placeholders."""
+        result = CellVariables(cell_id=cell_id, cell_type="markdown")
+        placeholders = re.findall(r"{{\s*([\w.]+)\s*}}", source)
+        for placeholder in placeholders:
+            result.referenced.add(placeholder.split(".", maxsplit=1)[0])
 
         return result
 

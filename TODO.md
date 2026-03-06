@@ -138,3 +138,27 @@
 - [x] Loading states & animations
 - [x] Responsive layout adjustments
 - [x] SVG logo/favicon
+
+## Phase 11: Enterprise Hardening
+- [x] Review `2412.02205v3.pdf` and align implementation priorities with the paper's three core modules
+- [x] Add workspace, user, membership, and audit-event models
+- [x] Scope notebooks, cells, datasources, and knowledge nodes by workspace
+- [x] Add RBAC guards for viewer / analyst / admin / owner
+- [x] Add request ID middleware and auditable mutation logging
+- [x] Protect WebSocket access with workspace-aware admission checks
+- [x] Surface workspace context and audit feed in the frontend shell
+- [x] Add backend tests for workspace isolation and audit access
+- [x] Update README and SDD for the enterprise architecture
+
+## Phase 12: Next Enterprise Milestones
+- [x] Complete inter-agent materialized result handoff through `CommunicationProtocol`
+- [x] Replace notebook execution with stateless DAG cell agents and file-backed IPC
+- [x] Complete notebook runtime linkage across SQL, Python, SQL, Chart, and Markdown cells
+- [x] Add AI-edit streaming with per-cell progress, DAG/IPC stages, and draft display
+- [x] Surface per-cell runtime workspace details in the notebook UI
+- [x] Seed an enterprise runtime demo notebook and validate it through backend tests
+- [ ] Replace trusted-header identity with OIDC / SSO integration
+- [ ] Add workspace administration APIs for membership management and invitations
+- [ ] Add immutable export pipeline for audit events and compliance retention
+- [ ] Add rate limiting, quotas, and per-workspace usage metering
+- [ ] Add background job orchestration for long-running agent workflows

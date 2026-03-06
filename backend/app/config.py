@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(env_path)
@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     debug: bool = True
+
+    # Enterprise defaults
+    default_workspace_slug: str = "demo-hq"
+    default_workspace_name: str = "Demo HQ"
+    default_workspace_description: str = "Default enterprise workspace for local development."
+    default_user_email: str = "admin@datalab.local"
+    default_user_name: str = "Enterprise Admin"
 
     # Paths
     @property

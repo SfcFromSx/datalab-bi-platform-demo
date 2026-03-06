@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MessageSquare } from 'lucide-react';
 import Header from '../common/Header';
 import Sidebar from '../sidebar/Sidebar';
@@ -6,11 +6,21 @@ import Notebook from '../notebook/Notebook';
 import ChatPanel from '../chat/ChatPanel';
 import { useUIStore } from '../../stores/uiStore';
 import { useNotebookStore } from '../../stores/notebookStore';
+import { useEnterpriseStore } from '../../stores/enterpriseStore';
 
 export default function MainLayout() {
   const { sidebarOpen, chatOpen, toggleChat } = useUIStore();
   const { activeNotebook } = useNotebookStore();
+  const { fetchContext, workspaceKey } = useEnterpriseStore();
   const [selectedNotebookId, setSelectedNotebookId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void fetchContext();
+  }, [fetchContext]);
+
+  useEffect(() => {
+    setSelectedNotebookId(null);
+  }, [workspaceKey]);
 
   const handleSelectNotebook = (id: string | null) => {
     setSelectedNotebookId(id);
@@ -34,7 +44,7 @@ export default function MainLayout() {
           ) : (
             <div className="flex items-center justify-center h-full">
               <div className="text-center space-y-4">
-                <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-emerald-500 via-cyan-500 to-slate-900 flex items-center justify-center shadow-lg">
                   <span className="text-3xl font-bold text-white">D</span>
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">

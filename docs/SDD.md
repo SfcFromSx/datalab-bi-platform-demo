@@ -1,7 +1,7 @@
 # DataLab - Software Design Document (SDD)
 
-**Version**: 1.0  
-**Date**: 2026-03-03  
+**Version**: 1.1  
+**Date**: 2026-03-06  
 **Based on**: arXiv:2412.02205v3 - "DataLab: A Unified Platform for LLM-Powered Business Intelligence"
 
 ---
@@ -44,6 +44,7 @@ This document covers the complete software design for:
 | **Extensibility** | DAG-based agent workflows, plugin APIs for data connectors |
 | **Efficiency** | Cell-based context management reduces token costs by ~60% |
 | **Collaboration** | Multi-role notebook with real-time updates |
+| **Governance** | Workspace isolation, RBAC, audit logging, and request tracing for enterprise operation |
 
 ### 1.4 Technology Stack
 
@@ -124,10 +125,21 @@ This document covers the complete software design for:
 | **Proxy Agent** | Routes user queries, creates FSM execution plans, orchestrates agents |
 | **Specialized Agents** | SQL, Python, Chart, Insight, EDA, Cleaning, Report generation |
 | **Domain Knowledge** | Knowledge generation (Map-Reduce), graph storage, coarse-to-fine retrieval |
-| **Inter-Agent Comm** | Structured info units, shared buffer, FSM-based selective retrieval |
-| **Context Management** | DAG of cell dependencies, adaptive context pruning |
+| **Inter-Agent Comm** | Structured info units for proxy agents plus file-backed inbox/outbox handoff between cell agents |
+| **Context Management** | Stateless DAG planning, adaptive context pruning, and per-cell workspace manifests |
 | **Execution Engines** | Sandboxed Python execution, DuckDB SQL engine |
 | **Notebook UI** | Multi-language cells, Monaco editor, chart GUI, drag-and-drop |
+| **Enterprise Control Plane** | Workspace resolution, role checks, auditable mutations, and scoped WebSocket access |
+
+### 2.3 Paper Alignment And Enterprise Delta
+
+Reviewing the local paper `2412.02205v3.pdf` confirms that DataLab's core research value remains centered on three modules:
+
+- **Domain Knowledge Incorporation** for enterprise-specific BI semantics and jargon
+- **Inter-Agent Communication** via structured information units and FSM-driven collaboration
+- **Cell-based Context Management** for notebook-aware context pruning and token efficiency
+
+The enterprise version extends these research modules rather than replacing them. The added product layer governs who can access a workspace, which resources are visible inside that workspace, and how every mutating action is traced and audited.
 
 ---
 
@@ -145,21 +157,32 @@ backend/app/
 │   ├── notebooks.py     # CRUD for notebooks
 │   ├── cells.py         # CRUD for cells + execution
 │   ├── agents.py        # Agent query endpoint
+│   ├── enterprise.py    # Enterprise context + audit endpoints
 │   ├── knowledge.py     # Knowledge CRUD + retrieval
 │   ├── datasources.py   # Data source connections
 │   └── websocket.py     # WebSocket handler
 ├── models/              # SQLAlchemy ORM
 │   ├── __init__.py
+│   ├── audit.py
 │   ├── notebook.py
 │   ├── cell.py
 │   ├── datasource.py
-│   └── knowledge.py
+│   ├── knowledge.py
+│   ├── membership.py
+│   ├── user.py
+│   └── workspace.py
 ├── schemas/             # Pydantic schemas
 │   ├── __init__.py
+│   ├── enterprise.py
 │   ├── notebook.py
 │   ├── cell.py
 │   ├── agent.py
 │   └── knowledge.py
+├── enterprise/          # Workspace context, RBAC, audit helpers
+│   ├── __init__.py
+│   ├── auth.py
+│   ├── audit.py
+│   └── resources.py
 ├── agents/              # Agent implementations
 │   ├── __init__.py
 │   ├── base.py          # BaseAgent ABC
@@ -177,6 +200,9 @@ backend/app/
 │   ├── shared_buffer.py # SharedInformationBuffer
 │   ├── fsm.py           # FiniteStateMachine
 │   └── protocol.py      # CommunicationProtocol
+├── cell_agents/         # Stateless cell-agent runtime
+│   ├── __init__.py
+│   └── runtime.py       # Per-cell workspace orchestration + file-backed IPC
 ├── knowledge/           # Domain Knowledge
 │   ├── __init__.py
 │   ├── generator.py     # MapReduceKnowledgeGenerator
@@ -277,11 +303,23 @@ frontend/src/
 
 ### 4.1 Database Schema (SQLAlchemy)
 
+#### Enterprise Control Plane
+
+| Table | Purpose | Key Fields |
+|-------|---------|-----------|
+| `workspaces` | Top-level tenant boundary | `id`, `slug`, `name`, `status` |
+| `users` | Enterprise actor identity | `id`, `email`, `display_name`, `auth_provider` |
+| `workspace_memberships` | Role assignment inside a workspace | `workspace_id`, `user_id`, `role` |
+| `audit_events` | Immutable audit trail for governed actions | `workspace_id`, `actor_user_id`, `action`, `request_id`, `details` |
+
+All tenant-owned product entities below are now filtered by `workspace_id`.
+
 #### Notebook
 
 | Column | Type | Description |
 |--------|------|-------------|
 | id | UUID (PK) | Unique notebook identifier |
+| workspace_id | UUID (FK) | Owning workspace / tenant |
 | title | String(256) | Notebook title |
 | description | Text | Optional description |
 | created_at | DateTime | Creation timestamp |
@@ -292,6 +330,7 @@ frontend/src/
 | Column | Type | Description |
 |--------|------|-------------|
 | id | UUID (PK) | Unique cell identifier |
+| workspace_id | UUID (FK) | Owning workspace / tenant |
 | notebook_id | UUID (FK) | Parent notebook |
 | cell_type | Enum | `sql`, `python`, `chart`, `markdown` |
 | source | Text | Cell source code/content |
@@ -306,6 +345,7 @@ frontend/src/
 | Column | Type | Description |
 |--------|------|-------------|
 | id | UUID (PK) | Unique datasource identifier |
+| workspace_id | UUID (FK) | Owning workspace / tenant |
 | name | String(128) | Display name |
 | ds_type | Enum | `sqlite`, `postgresql`, `mysql`, `csv`, `duckdb` |
 | connection_string | Text | Encrypted connection string |
@@ -317,6 +357,7 @@ frontend/src/
 | Column | Type | Description |
 |--------|------|-------------|
 | id | UUID (PK) | Unique node identifier |
+| workspace_id | UUID (FK) | Owning workspace / tenant |
 | node_type | Enum | `database`, `table`, `column`, `value`, `jargon`, `alias` |
 | name | String(256) | Node name |
 | parent_id | UUID (FK, nullable) | Parent node in the tree |
@@ -504,6 +545,12 @@ Generated by ProxyAgent based on query analysis:
 - States: Wait → Execution → Finish
 - Selective retrieval: each agent only receives relevant info from predecessors in the FSM
 
+#### 5.3.4 Materialized Inter-Agent Handoffs
+
+- The proxy agent now executes SQL-agent outputs when possible and stores a structured payload of `{query, result}` in the shared buffer
+- Downstream chart, insight, and report agents receive both the raw SQL and a preview of the tabular result through `predecessor_info`, `data_info`, and `analysis_context`
+- Agent-created notebook cells persist the generated source together with any materialized preview output so the notebook stays inspectable after orchestration finishes
+
 ### 5.4 Cell-based Context Management
 
 #### 5.4.1 DAG Construction
@@ -519,11 +566,43 @@ Generated by ProxyAgent based on query analysis:
 - **Pruning**: Filter by task type (e.g., NL2DSCode → only Python cells)
 - **Buffer retrieval**: Fetch associated info units for agent-generated cells
 
+#### 5.4.3 Notebook Runtime Bundle
+
+- A notebook runtime bundle is built from ordered cells and includes the dependency DAG, typed cell metadata, and adaptive retrieval helpers
+- The dependency DAG only links a cell to the latest previous definition of a referenced variable, which preserves notebook execution order and avoids illegal forward references
+- SQL cells can publish named notebook outputs with `-- output: variable_name`
+- Python execution replays ancestor Python cell sources from cell-agent workspace files and injects upstream tabular outputs as DataFrames before running the active cell
+- SQL execution runs in an isolated DuckDB connection seeded from workspace data sources and upstream notebook tables loaded from file-backed IPC payloads
+- Chart cells validate `data_source` references against upstream notebook outputs before execution
+- Markdown cells resolve placeholders such as `{{ sales_summary.row_count }}`, `{{ product_metrics.columns }}`, and `{{ product_metrics.preview }}`
+- AI-edit requests reuse the same runtime bundle to build cell-specific context and preserve linkage contracts such as SQL output aliases, chart `data_source` references, and markdown placeholders
+
+#### 5.4.4 Cell-Agent Runtime
+
+- Every notebook cell is treated as a cell agent with its own workspace directory under `data/cell_agents/<workspace>/<notebook>/<position>-<type>-<id>/`
+- Each execution request rebuilds a fresh DAG plan and executes only the target cell plus its ancestors in notebook order
+- Every workspace contains `source.*`, `task.json`, `task.md`, `context.json`, `output.json`, and `inbox/` + `outbox/` folders
+- Direct dependency messages are written as JSON files and copied from the producer cell's `outbox/` into the consumer cell's `inbox/`
+- The frontend surfaces this runtime state through the `Cell Agent Runtime` panel on executed cells and through the right-side AI progress rail
+
 ---
 
 ## 6. API Specification
 
 ### 6.1 REST Endpoints
+
+All REST requests are resolved against an enterprise context using:
+
+- `X-DataLab-Workspace`
+- `X-DataLab-User-Email`
+- `X-Request-ID` (optional; generated if absent)
+
+#### Enterprise
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/enterprise/context` | Resolve active workspace, user, role, and accessible workspaces |
+| GET | `/api/enterprise/audit-events` | List recent audit events for owners/admins in the active workspace |
 
 #### Notebooks
 
@@ -543,6 +622,7 @@ Generated by ProxyAgent based on query analysis:
 | PUT | `/api/cells/{id}` | Update cell content |
 | DELETE | `/api/cells/{id}` | Delete cell |
 | POST | `/api/cells/{id}/execute` | Execute cell code |
+| POST | `/api/cells/{id}/edit-with-ai` | Stream an AI rewrite for a specific cell |
 | PUT | `/api/cells/{id}/move` | Reorder cell |
 
 #### Agents
@@ -569,9 +649,21 @@ Generated by ProxyAgent based on query analysis:
 | GET | `/api/datasources/{id}/schema` | Get schema (tables/columns) |
 | POST | `/api/datasources/{id}/query` | Execute raw SQL |
 
-### 6.2 WebSocket Protocol
+### 6.2 Authorization And Scoping Rules
+
+- Viewer and above: read notebooks, folders, datasources, and knowledge
+- Analyst and above: create or mutate notebooks, cells, datasources, knowledge, and agent executions
+- Admin and owner: read audit events
+- All direct resource lookups (`/cells/{id}`, `/notebooks/{id}`, etc.) are filtered by `workspace_id`
+
+### 6.3 WebSocket Protocol
 
 Endpoint: `ws://host/ws/{notebook_id}`
+
+Enterprise context is supplied through query parameters:
+
+- `workspace`
+- `user`
 
 Messages follow the format:
 
@@ -592,6 +684,19 @@ Messages follow the format:
 - `cell_update`: `{ "cell_id": "...", "output": {...}, "status": "success|error" }`
 - `cell_create`: `{ "cell": { "id": "...", "type": "...", "source": "...", "position": N } }`
 
+### 6.4 AI Edit Streaming
+
+Endpoint: `POST /api/cells/{id}/edit-with-ai`
+
+Response type: `text/event-stream`
+
+Event sequence:
+
+- `progress`: context, DAG, IPC, rewrite, generation, and validation progress updates
+- `chunk`: incremental model tokens for the right-side draft panel
+- `done`: sanitized final cell source plus cell-agent workspace details
+- `error`: structured failure state for the cell progress panel
+
 ---
 
 ## 7. Frontend Design
@@ -602,7 +707,8 @@ Messages follow the format:
 - `notebooks: Notebook[]`
 - `activeNotebook: Notebook | null`
 - `cells: Map<string, Cell>`
-- Actions: `loadNotebook`, `addCell`, `updateCell`, `deleteCell`, `moveCell`, `executeCell`
+- `aiEditStateByCellId: Record<string, CellAIState>`
+- Actions: `loadNotebook`, `addCell`, `updateCell`, `deleteCell`, `moveCell`, `executeCell`, `editCellWithAI`, `clearCellAIState`
 
 #### ChatStore
 - `messages: ChatMessage[]`
@@ -614,22 +720,29 @@ Messages follow the format:
 - `language: 'en' | 'zh'`
 - `theme: 'light' | 'dark'`
 
+#### EnterpriseStore
+- `context: EnterpriseContext | null`
+- `auditEvents: AuditEvent[]`
+- `workspaceKey: string | null`
+- Actions: `fetchContext`, `refreshAudit`, `setWorkspaceKey`
+
 ### 7.2 Component Hierarchy
 
 ```
 App
 └── MainLayout
-    ├── Header (logo, language toggle, theme toggle)
+    ├── Header (logo, workspace selector, role badge, language toggle, theme toggle)
     ├── Sidebar
     │   ├── NotebookList
     │   ├── DataExplorer (tree: DB → Table → Column)
-    │   └── KnowledgePanel
+    │   └── AuditPanel
     └── MainContent
         ├── Notebook
         │   ├── CellContainer (for each cell)
         │   │   ├── CellToolbar (run, delete, move, type badge)
         │   │   ├── SqlCell / PythonCell / ChartCell / MarkdownCell
-        │   │   └── CellOutput (data table, stdout, chart, rendered markdown)
+        │   │   ├── CellOutput (data table, stdout, chart, rendered markdown)
+        │   │   └── CellGenerationPanel (right-side AI progress and live draft)
         │   └── AddCellButton
         └── ChatPanel (floating, toggleable)
             ├── ChatMessage (user / assistant bubbles)
@@ -642,8 +755,8 @@ App
 |-----------|--------|--------|
 | SQL | Monaco (SQL mode) | DataTable component |
 | Python | Monaco (Python mode) | stdout + DataTable + images |
-| Chart | GUI config panel (axes, filters, colors) | ECharts renderer |
-| Markdown | Monaco (Markdown mode) | Rendered HTML preview |
+| Chart | JSON spec + notebook `data_source` binding | ECharts renderer |
+| Markdown | Monaco (Markdown mode) | Rendered preview with resolved notebook placeholders |
 
 ---
 
@@ -652,6 +765,7 @@ App
 ### 8.1 Python Execution Sandbox
 
 - Subprocess-based execution with timeout (default 30s)
+- Prefers the project virtualenv interpreter when available to avoid host Python package drift
 - Resource limits: memory (512MB), CPU time
 - Restricted imports: block `os.system`, `subprocess`, `shutil.rmtree`, etc.
 - Temp directory isolation per execution
@@ -669,6 +783,20 @@ App
 - CORS configuration for frontend origin
 - Rate limiting on agent query endpoints
 - Input sanitization for all user-provided content
+
+### 8.4 Enterprise Workspace Governance
+
+- Trusted-header enterprise context resolution for user and workspace identity
+- Role-based access control with `owner`, `admin`, `analyst`, and `viewer`
+- Workspace scoping across notebooks, cells, folders, datasources, and knowledge nodes
+- Governed WebSocket admission based on workspace membership and notebook ownership
+
+### 8.5 Auditability And Traceability
+
+- Every mutating REST action emits an `audit_events` record
+- Each request is tagged with an `X-Request-ID` response header
+- The admin UI exposes a recent audit feed for operational review
+- Audit payloads record resource type, resource id, actor, action, and structured details
 
 ---
 
@@ -730,7 +858,13 @@ services:
     depends_on: [backend]
 ```
 
-### 10.3 Environment Variables
+### 10.3 Enterprise Deployment Notes
+
+- Production deployments should terminate identity at a trusted upstream gateway or SSO layer and inject `X-DataLab-Workspace` plus `X-DataLab-User-Email`
+- Audit events should be exported to centralized logging or SIEM storage
+- SQLite remains suitable for demos; production enterprise deployments should use PostgreSQL
+
+### 10.4 Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -743,3 +877,6 @@ services:
 | `SANDBOX_TIMEOUT` | `30` | Python execution timeout (seconds) |
 | `SANDBOX_MEMORY_MB` | `512` | Python execution memory limit |
 | `CORS_ORIGINS` | `http://localhost:5173` | Allowed CORS origins |
+| `DEFAULT_WORKSPACE_SLUG` | `demo-hq` | Bootstrapped local workspace slug |
+| `DEFAULT_WORKSPACE_NAME` | `Demo HQ` | Bootstrapped local workspace name |
+| `DEFAULT_USER_EMAIL` | `admin@datalab.local` | Bootstrapped local enterprise user |

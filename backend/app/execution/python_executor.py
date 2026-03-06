@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -13,6 +14,18 @@ from typing import Any
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_python_executable() -> str:
+    backend_root = Path(__file__).resolve().parents[2]
+    candidates = [
+        backend_root / ".venv" / "bin" / "python",
+        backend_root / ".venv" / "Scripts" / "python.exe",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return sys.executable
 
 WRAPPER_TEMPLATE = '''
 import sys
@@ -25,25 +38,48 @@ _stdout_capture = io.StringIO()
 _stderr_capture = io.StringIO()
 _old_stdout = sys.stdout
 _old_stderr = sys.stderr
-sys.stdout = _stdout_capture
-sys.stderr = _stderr_capture
 
 _result = {{"status": "success", "stdout": "", "stderr": "", "data": None, "error": None}}
+_bootstrap_tables = {bootstrap_tables}
+_bootstrap_code = {bootstrap_code}
+_user_code = {code}
 
 try:
     _globals = {{"pd": pd, "__builtins__": __builtins__}}
-    exec("""{code}""", _globals)
+    for _name, _table in _bootstrap_tables.items():
+        _globals[_name] = pd.DataFrame(
+            _table.get("rows", []),
+            columns=_table.get("columns", []),
+        )
 
-    # Capture any DataFrame in the namespace for display
+    if _bootstrap_code.strip():
+        _bootstrap_stdout = io.StringIO()
+        _bootstrap_stderr = io.StringIO()
+        sys.stdout = _bootstrap_stdout
+        sys.stderr = _bootstrap_stderr
+        exec(_bootstrap_code, _globals)
+
+    _known_keys = set(_globals.keys())
+
+    sys.stdout = _stdout_capture
+    sys.stderr = _stderr_capture
+    exec(_user_code, _globals)
+
+    _dataframes = []
     for _name, _val in _globals.items():
         if isinstance(_val, pd.DataFrame) and not _name.startswith("_"):
-            _result["data"] = {{
-                "columns": list(_val.columns),
-                "rows": _val.head(500).values.tolist(),
-                "shape": list(_val.shape),
-                "variable": _name,
-            }}
-            break
+            _dataframes.append((_name, _val))
+
+    _new_frames = [item for item in _dataframes if item[0] not in _known_keys]
+    _selected = _new_frames[-1] if _new_frames else (_dataframes[-1] if _dataframes else None)
+    if _selected:
+        _frame_name, _frame = _selected
+        _result["data"] = {{
+            "columns": list(_frame.columns),
+            "rows": _frame.head(500).values.tolist(),
+            "shape": list(_frame.shape),
+            "variable": _frame_name,
+        }}
 
 except Exception as _e:
     _result["status"] = "error"
@@ -64,10 +100,19 @@ class PythonExecutor:
 
     def __init__(self):
         self.timeout = settings.sandbox_timeout
+        self.python_executable = _resolve_python_executable()
 
-    async def execute(self, code: str) -> dict[str, Any]:
-        escaped_code = code.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n')
-        wrapper = WRAPPER_TEMPLATE.replace("{code}", escaped_code)
+    async def execute(
+        self,
+        code: str,
+        bootstrap_code: str = "",
+        bootstrap_tables: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        wrapper = WRAPPER_TEMPLATE.format(
+            code=json.dumps(code),
+            bootstrap_code=json.dumps(bootstrap_code),
+            bootstrap_tables=json.dumps(bootstrap_tables or {}),
+        )
 
         with tempfile.NamedTemporaryFile(
             mode="w", suffix=".py", delete=False, encoding="utf-8"
@@ -77,10 +122,11 @@ class PythonExecutor:
 
         try:
             process = await asyncio.create_subprocess_exec(
-                sys.executable,
+                self.python_executable,
                 script_path,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env={**os.environ, "PYTHONNOUSERSITE": "1"},
             )
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(

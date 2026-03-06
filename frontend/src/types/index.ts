@@ -2,6 +2,7 @@ export type CellType = 'sql' | 'python' | 'chart' | 'markdown';
 
 export interface Cell {
   id: string;
+  workspace_id: string;
   notebook_id: string;
   cell_type: CellType;
   source: string;
@@ -22,6 +23,52 @@ export interface CellOutput {
   rows?: unknown[][];
   row_count?: number;
   html?: string;
+  chart?: {
+    data_source?: string | null;
+    columns?: string[];
+    row_count?: number;
+  };
+  bindings?: string[];
+  agent?: CellAgentRuntimeInfo | null;
+}
+
+export interface CellAIState {
+  status: 'idle' | 'generating' | 'completed' | 'error';
+  stage: string;
+  message: string;
+  progress: number;
+  draft: string;
+  details?: CellAgentRuntimeInfo | null;
+  error?: string | null;
+}
+
+export interface CellAgentRuntimeInfo {
+  mode: string;
+  run_id?: string;
+  workspace_dir: string;
+  source_file?: string;
+  task_file?: string;
+  context_file?: string;
+  bootstrap_file?: string | null;
+  output_file?: string;
+  inbox_dir?: string;
+  outbox_dir?: string;
+  dependencies: string[];
+  ancestors: string[];
+  plan: string[];
+  fingerprint?: string;
+  input_messages?: number;
+  published_messages?: number;
+}
+
+export interface CellExecuteResult {
+  cell_id: string;
+  status: string;
+  output: CellOutput;
+  executed_cells: Array<{
+    cell_id: string;
+    output: CellOutput;
+  }>;
 }
 
 export interface TableData {
@@ -33,6 +80,7 @@ export interface TableData {
 
 export interface Notebook {
   id: string;
+  workspace_id: string;
   title: string;
   description: string;
   folder_id: string | null;
@@ -43,6 +91,7 @@ export interface Notebook {
 
 export interface NotebookListItem {
   id: string;
+  workspace_id: string;
   title: string;
   description: string;
   folder_id: string | null;
@@ -53,6 +102,7 @@ export interface NotebookListItem {
 
 export interface Folder {
   id: string;
+  workspace_id: string;
   name: string;
   position: number;
   created_at: string;
@@ -110,4 +160,37 @@ export interface ChartConfig {
   yAxis?: string;
   series?: unknown[];
   option?: Record<string, unknown>;
+}
+
+export interface EnterpriseWorkspace {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  role: 'owner' | 'admin' | 'analyst' | 'viewer';
+}
+
+export interface EnterpriseUser {
+  id: string;
+  email: string;
+  display_name: string;
+}
+
+export interface EnterpriseContext {
+  request_id: string;
+  workspace: EnterpriseWorkspace;
+  user: EnterpriseUser;
+  available_workspaces: EnterpriseWorkspace[];
+}
+
+export interface AuditEvent {
+  id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  status: 'success' | 'failure';
+  request_id: string;
+  actor_email: string | null;
+  details: Record<string, unknown> | null;
+  created_at: string;
 }

@@ -14,9 +14,10 @@ from app.agents.insight_agent import insight_agent
 from app.agents.python_agent import python_agent
 from app.agents.report_agent import report_agent
 from app.agents.sql_agent import sql_agent
-from app.communication.fsm import AgentFSM, FSMState
 from app.communication.info_unit import InformationUnit
-from app.communication.shared_buffer import SharedBuffer
+from app.communication.protocol import CommunicationProtocol
+from app.execution import sql_executor
+from app.notebook_runtime import build_query_context, build_runtime_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class ProxyAgent(BaseAgent):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.buffer = SharedBuffer()
+        self.protocol = CommunicationProtocol()
 
     async def execute(
         self,
@@ -61,43 +62,50 @@ class ProxyAgent(BaseAgent):
                 for a in agents_list
             ]
 
-        fsm = AgentFSM()
-        for step in execution_steps:
-            fsm.add_state(step["agent"], FSMState.WAIT)
-            for dep in step.get("depends_on", []):
-                fsm.add_transition(dep, step["agent"])
+        runtime_bundle = None
+        notebook_cells = ctx.get("notebook_cells", [])
+        task_type = self._infer_task_type(agents_list, query)
+        if notebook_cells:
+            runtime_bundle = build_runtime_bundle(notebook_cells)
+            query_context = build_query_context(
+                runtime_bundle,
+                query,
+                focus_cell_id=ctx.get("cell_id"),
+                task_type=task_type,
+                limit=10,
+            )
+            ctx["relevant_cells"] = query_context["cells"]
+            ctx["notebook_context"] = query_context["notebook_context"]
+            ctx["table_context"] = query_context["table_context"]
+
+        self.protocol.reset()
+        self.protocol.setup_plan(execution_steps)
 
         results: list[InformationUnit] = []
+        while not self.protocol.is_complete():
+            ready_agents = self.protocol.get_next_agents()
+            if not ready_agents:
+                break
 
-        for step in execution_steps:
-            agent_name = step["agent"]
-            agent = AGENT_REGISTRY.get(agent_name)
-            if not agent:
-                logger.warning(f"Unknown agent: {agent_name}, skipping")
-                continue
+            for agent_name in ready_agents:
+                agent = AGENT_REGISTRY.get(agent_name)
+                if not agent:
+                    logger.warning(f"Unknown agent: {agent_name}, skipping")
+                    self.protocol.finish_agent(agent_name)
+                    continue
 
-            fsm.transition(agent_name, FSMState.EXECUTION)
+                self.protocol.start_agent(agent_name)
+                step_context = self._compose_step_context(ctx, agent_name)
 
-            predecessor_info = self.buffer.retrieve_for_agent(
-                agent_name, fsm.get_predecessors(agent_name)
-            )
-            step_context = {**ctx}
-            if predecessor_info:
-                step_context["predecessor_info"] = predecessor_info
-                for info in predecessor_info:
-                    if info.role == "SQL Agent" and isinstance(info.content, str):
-                        step_context["sql_result"] = info.content
-                    elif info.role == "Python Agent" and isinstance(info.content, str):
-                        step_context["python_result"] = info.content
-
-            try:
-                result = await agent.execute(query, step_context)
-                self.buffer.store(result)
-                results.append(result)
-                fsm.transition(agent_name, FSMState.FINISH)
-            except Exception as e:
-                logger.error(f"Agent {agent_name} failed: {e}")
-                fsm.transition(agent_name, FSMState.FINISH)
+                try:
+                    result = await agent.execute(query, step_context)
+                    materialized = self._materialize_result(result, ctx)
+                    self.protocol.store_result(materialized)
+                    results.append(materialized)
+                except Exception as e:
+                    logger.error(f"Agent {agent_name} failed: {e}")
+                finally:
+                    self.protocol.finish_agent(agent_name)
 
         final_content = {
             "task_id": task_id,
@@ -107,6 +115,7 @@ class ProxyAgent(BaseAgent):
                     "agent": r.role,
                     "action": r.action,
                     "content": r.content,
+                    "output": self._extract_cell_output(r),
                     "cell_type": self._infer_cell_type(r.role),
                 }
                 for r in results
@@ -210,6 +219,94 @@ class ProxyAgent(BaseAgent):
                     {"agent": "sql_agent", "depends_on": [], "description": "Query data"},
                 ],
             }
+
+    def _compose_step_context(
+        self,
+        base_context: dict[str, Any],
+        agent_name: str,
+    ) -> dict[str, Any]:
+        predecessor_info = self.protocol.prepare_context(agent_name)
+        step_context = {**base_context, "predecessor_info": predecessor_info}
+
+        analysis_parts: list[str] = []
+        data_parts: list[str] = []
+        if base_context.get("table_context"):
+            data_parts.append(str(base_context["table_context"]))
+        if base_context.get("notebook_context"):
+            analysis_parts.append(str(base_context["notebook_context"]))
+
+        for info in predecessor_info:
+            analysis_parts.append(info.to_context_string())
+            if info.role == "SQL Agent":
+                if isinstance(info.content, dict):
+                    step_context["sql_query"] = info.content.get("query", "")
+                    sql_result = info.content.get("result")
+                    if isinstance(sql_result, dict):
+                        preview = self._format_sql_result(sql_result)
+                        if preview:
+                            data_parts.append(preview)
+                            analysis_parts.append(preview)
+                else:
+                    step_context["sql_query"] = str(info.content)
+            elif info.role in {"Insight Agent", "Report Agent"}:
+                analysis_parts.append(str(info.content))
+
+        step_context["data_info"] = "\n\n".join(part for part in data_parts if part)
+        step_context["analysis_context"] = "\n\n".join(part for part in analysis_parts if part)
+        return step_context
+
+    def _materialize_result(
+        self,
+        result: InformationUnit,
+        context: dict[str, Any],
+    ) -> InformationUnit:
+        if result.role == "SQL Agent" and isinstance(result.content, str):
+            preview = sql_executor.execute(result.content, context.get("datasource_id"))
+            result.content = {
+                "query": result.content,
+                "result": preview,
+            }
+        return result
+
+    @staticmethod
+    def _extract_cell_output(result: InformationUnit) -> dict[str, Any] | None:
+        if result.role == "SQL Agent" and isinstance(result.content, dict):
+            output = result.content.get("result")
+            if isinstance(output, dict):
+                return output
+        return None
+
+    @staticmethod
+    def _format_sql_result(result: dict[str, Any]) -> str:
+        columns = result.get("columns") or []
+        row_count = result.get("row_count", 0)
+        if not columns:
+            return ""
+        preview_rows = result.get("rows", [])[:5]
+        return (
+            f"SQL result with columns {columns} and {row_count} rows. "
+            f"Preview rows: {preview_rows}"
+        )
+
+    @staticmethod
+    def _infer_task_type(agents_list: list[str], query: str) -> str:
+        if "chart_agent" in agents_list:
+            return "nl2vis"
+        if "report_agent" in agents_list:
+            return "report"
+        if "insight_agent" in agents_list:
+            return "nl2insight"
+        if "eda_agent" in agents_list:
+            return "eda"
+        if "cleaning_agent" in agents_list:
+            return "cleaning"
+        if "python_agent" in agents_list:
+            return "nl2dscode"
+        if "sql_agent" in agents_list:
+            return "nl2sql"
+        if "chart" in query.lower():
+            return "nl2vis"
+        return "general"
 
     @staticmethod
     def _infer_cell_type(role: str) -> str:

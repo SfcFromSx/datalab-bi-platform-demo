@@ -9,6 +9,7 @@ Supports:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Optional
 
 from app.communication.info_unit import InformationUnit
@@ -110,6 +111,137 @@ class ContextRetriever:
                 relevant_cells.append(cell_info)
 
         return relevant_cells
+
+    def retrieve_query_context(
+        self,
+        query: str,
+        focus_cell_id: Optional[str] = None,
+        task_type: str = "general",
+        cells_data: Optional[dict[str, dict]] = None,
+        limit: int = 8,
+    ) -> list[dict[str, Any]]:
+        """Retrieve the most relevant notebook cells for a natural-language query."""
+        allowed_types = TASK_CELL_TYPES.get(task_type, TASK_CELL_TYPES["general"])
+        query_tokens = self._tokenize(query)
+        candidate_ids: set[str] = set()
+
+        if focus_cell_id:
+            candidate_ids.update(self.dag.get_ancestors(focus_cell_id))
+            candidate_ids.add(focus_cell_id)
+            candidate_ids.update(self.dag.get_descendants(focus_cell_id))
+
+        scored: list[tuple[float, dict[str, Any]]] = []
+        for cell_id, node in self.dag._nodes.items():
+            if node.cell_type not in allowed_types:
+                continue
+
+            score = 0.0
+            if cell_id in candidate_ids:
+                score += 5.0
+
+            score += self._score_node(node, query_tokens)
+
+            if cells_data and cell_id in cells_data:
+                source = cells_data[cell_id].get("source", "")
+                output = cells_data[cell_id].get("output")
+                score += self._score_text(source, query_tokens)
+                score += self._score_text(self._summarize_output(output), query_tokens)
+
+            if score <= 0:
+                continue
+
+            cell_info = self._build_cell_info(cell_id, node, cells_data)
+            scored.append((score, cell_info))
+
+        if not scored:
+            fallback_ids = [
+                cell_id
+                for cell_id, node in self.dag._nodes.items()
+                if node.cell_type in allowed_types
+            ]
+            fallback_ids.sort(
+                key=lambda cell_id: cells_data.get(cell_id, {}).get("position", 0)
+                if cells_data
+                else 0
+            )
+            scored = [
+                (0.0, self._build_cell_info(cell_id, self.dag.get_node(cell_id), cells_data))
+                for cell_id in fallback_ids[-limit:]
+                if self.dag.get_node(cell_id)
+            ]
+
+        scored.sort(
+            key=lambda item: (
+                -item[0],
+                cells_data.get(item[1]["cell_id"], {}).get("position", 0)
+                if cells_data
+                else 0,
+            )
+        )
+
+        results = [item[1] for item in scored[:limit]]
+        results.sort(
+            key=lambda item: cells_data.get(item["cell_id"], {}).get("position", 0)
+            if cells_data
+            else 0
+        )
+        return results
+
+    def _build_cell_info(
+        self,
+        cell_id: str,
+        node,
+        cells_data: Optional[dict[str, dict]] = None,
+    ) -> dict[str, Any]:
+        cell_info: dict[str, Any] = {
+            "cell_id": cell_id,
+            "cell_type": node.cell_type,
+            "variables_defined": list(node.variables_defined),
+            "variables_referenced": list(node.variables_referenced),
+        }
+        if cells_data and cell_id in cells_data:
+            cell_info["source"] = cells_data[cell_id].get("source", "")
+            cell_info["output"] = cells_data[cell_id].get("output")
+            cell_info["position"] = cells_data[cell_id].get("position", 0)
+        if self.buffer:
+            info_units = self._get_cell_info_units(cell_id)
+            if info_units:
+                cell_info["info_units"] = [u.to_dict() for u in info_units]
+        return cell_info
+
+    @staticmethod
+    def _tokenize(text: str) -> set[str]:
+        return {token for token in re.findall(r"[a-zA-Z0-9_]+", text.lower()) if token}
+
+    def _score_node(self, node, query_tokens: set[str]) -> float:
+        tokens = (
+            {token.lower() for token in node.variables_defined}
+            | {token.lower() for token in node.variables_referenced}
+        )
+        return float(len(tokens & query_tokens))
+
+    def _score_text(self, text: str, query_tokens: set[str]) -> float:
+        if not text:
+            return 0.0
+        text_tokens = self._tokenize(text)
+        return float(len(text_tokens & query_tokens))
+
+    @staticmethod
+    def _summarize_output(output: Any) -> str:
+        if not output:
+            return ""
+        if isinstance(output, dict):
+            parts: list[str] = []
+            if output.get("error"):
+                parts.append(str(output["error"]))
+            if output.get("stdout"):
+                parts.append(str(output["stdout"]))
+            if output.get("columns"):
+                parts.extend(str(col) for col in output["columns"])
+            if output.get("data") and isinstance(output["data"], dict):
+                parts.extend(str(col) for col in output["data"].get("columns", []))
+            return " ".join(parts)
+        return str(output)
 
     def _get_cell_info_units(self, cell_id: str) -> list[InformationUnit]:
         """Get info units associated with a cell from the shared buffer."""

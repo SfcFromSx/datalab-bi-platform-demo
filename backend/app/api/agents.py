@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents import proxy_agent
 from app.database import get_session
+from app.enterprise import EnterpriseContext, log_audit_event, require_role
+from app.enterprise.resources import require_workspace_resource
 from app.models import Cell, CellType, Notebook
+from app.models.membership import WorkspaceRole
 from app.schemas import AgentQueryRequest, AgentQueryResponse
 
 logger = logging.getLogger(__name__)
@@ -22,23 +26,32 @@ router = APIRouter(tags=["agents"])
 @router.post("/agents/query", response_model=AgentQueryResponse)
 async def agent_query(
     data: AgentQueryRequest,
+    request_context: EnterpriseContext = Depends(require_role(WorkspaceRole.ANALYST)),
     session: AsyncSession = Depends(get_session),
 ):
-    nb = await session.get(Notebook, data.notebook_id)
-    if not nb:
-        raise HTTPException(status_code=404, detail="Notebook not found")
+    nb = await require_workspace_resource(
+        session,
+        Notebook,
+        data.notebook_id,
+        request_context.workspace.id,
+        "Notebook not found",
+    )
 
     result = await session.execute(
         select(Cell)
-        .where(Cell.notebook_id == data.notebook_id)
+        .where(
+            Cell.notebook_id == data.notebook_id,
+            Cell.workspace_id == request_context.workspace.id,
+        )
         .order_by(Cell.position)
     )
     existing_cells = result.scalars().all()
 
-    context = {
+    agent_context = {
         "notebook_id": data.notebook_id,
         "cell_id": data.cell_id,
         "datasource_id": data.datasource_id,
+        "notebook_cells": existing_cells,
         "notebook_context": _build_notebook_context(existing_cells),
     }
 
@@ -51,10 +64,10 @@ async def agent_query(
             cols = sql_executor.get_schema(table, data.datasource_id)
             col_strs = [f"  {c['column_name']} ({c['column_type']})" for c in cols]
             schemas.append(f"Table: {table}\n" + "\n".join(col_strs))
-        context["schema"] = "\n\n".join(schemas) if schemas else "No schema available"
+        agent_context["schema"] = "\n\n".join(schemas) if schemas else "No schema available"
 
     try:
-        agent_result = await proxy_agent.execute(data.query, context)
+        agent_result = await proxy_agent.execute(data.query, agent_context)
     except Exception as e:
         logger.error(f"Agent execution failed: {e}")
         return AgentQueryResponse(
@@ -85,18 +98,23 @@ async def agent_query(
 
             cell_content = result_item.get("content", "")
             if isinstance(cell_content, dict):
-                import json
                 if cell_type == CellType.CHART:
                     cell_source = json.dumps(cell_content)
+                elif cell_type == CellType.SQL and "query" in cell_content:
+                    cell_source = str(cell_content.get("query", ""))
                 else:
                     cell_source = json.dumps(cell_content, indent=2)
             else:
                 cell_source = str(cell_content)
 
+            cell_output = result_item.get("output")
+
             new_cell = Cell(
+                workspace_id=request_context.workspace.id,
                 notebook_id=data.notebook_id,
                 cell_type=cell_type,
                 source=cell_source,
+                output=cell_output,
                 position=next_pos,
             )
             session.add(new_cell)
@@ -111,8 +129,25 @@ async def agent_query(
             })
             next_pos += 1
 
+    await log_audit_event(
+        session,
+        request_context,
+        action="agent.query",
+        resource_type="notebook",
+        resource_id=nb.id,
+        details={
+            "query_length": len(data.query),
+            "datasource_id": data.datasource_id,
+            "cells_created": len(cells_created),
+        },
+    )
+
     return AgentQueryResponse(
-        task_id=content.get("task_id", str(uuid.uuid4())) if isinstance(content, dict) else str(uuid.uuid4()),
+        task_id=(
+            content.get("task_id", str(uuid.uuid4()))
+            if isinstance(content, dict)
+            else str(uuid.uuid4())
+        ),
         status="completed",
         message="Agent task completed successfully",
         cells_created=cells_created,
@@ -123,5 +158,11 @@ def _build_notebook_context(cells: list[Cell]) -> str:
     parts = []
     for cell in cells[-10:]:
         source_preview = cell.source[:300] if cell.source else ""
-        parts.append(f"[{cell.cell_type.value} cell] {source_preview}")
+        output_summary = ""
+        if isinstance(cell.output, dict):
+            if cell.output.get("data") and isinstance(cell.output["data"], dict):
+                output_summary = f" output={cell.output['data'].get('variable', 'dataframe')}"
+            elif cell.output.get("columns"):
+                output_summary = f" output=columns:{cell.output.get('columns')}"
+        parts.append(f"[{cell.cell_type.value} cell]{output_summary} {source_preview}")
     return "\n---\n".join(parts)

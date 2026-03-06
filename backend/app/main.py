@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api import agents, cells, datasources, enterprise, folders, knowledge, notebooks, websocket
 from app.config import settings
 from app.database import init_db
+from app.enterprise import seed_enterprise_defaults
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -20,6 +23,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting DataLab backend...")
     await init_db()
+    from app.database import async_session_factory
+
+    async with async_session_factory() as session:
+        await seed_enterprise_defaults(session)
     logger.info("Database initialized")
     yield
     logger.info("Shutting down DataLab backend...")
@@ -40,11 +47,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.api import agents, cells, datasources, folders, knowledge, notebooks, websocket  # noqa: E402
+
+@app.middleware("http")
+async def add_request_id(request, call_next):
+    request.state.request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request.state.request_id
+    return response
 
 app.include_router(notebooks.router, prefix="/api")
 app.include_router(cells.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
+app.include_router(enterprise.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(knowledge.router, prefix="/api")
 app.include_router(datasources.router, prefix="/api")
@@ -53,4 +67,4 @@ app.include_router(websocket.router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": "1.0.0", "workspace_mode": "enterprise"}

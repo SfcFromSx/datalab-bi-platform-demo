@@ -45,6 +45,15 @@
     "moveTo": "移动到文件夹",
     "removeFromFolder": "从文件夹移出"
   },
+  "enterprise": {
+    "workspace": "工作区",
+    "workspaceDescription": "企业级控制会在当前工作区内隔离笔记本、数据源和审计活动。",
+    "audit": "审计",
+    "auditDescription": "当前工作区的最近受控操作。",
+    "refreshAudit": "刷新审计日志",
+    "noAuditEvents": "暂无审计事件",
+    "systemActor": "系统"
+  },
   "common": {
     "save": "保存",
     "cancel": "取消",

@@ -1,4 +1,5 @@
 import type { WSMessage } from '@/types';
+import { getStoredUserEmail, getStoredWorkspaceKey } from './api';
 
 type WSHandler = (message: WSMessage) => void;
 
@@ -14,7 +15,17 @@ class WebSocketClient {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const url = `${protocol}//${host}/ws/${notebookId}`;
+    const params = new URLSearchParams();
+    const workspaceKey = getStoredWorkspaceKey();
+    const userEmail = getStoredUserEmail();
+    if (workspaceKey) {
+      params.set('workspace', workspaceKey);
+    }
+    if (userEmail) {
+      params.set('user', userEmail);
+    }
+    const query = params.toString();
+    const url = `${protocol}//${host}/ws/${notebookId}${query ? `?${query}` : ''}`;
 
     this.ws = new WebSocket(url);
 

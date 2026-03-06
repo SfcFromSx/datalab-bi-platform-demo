@@ -45,6 +45,15 @@
     "moveTo": "Move to folder",
     "removeFromFolder": "Remove from folder"
   },
+  "enterprise": {
+    "workspace": "Workspace",
+    "workspaceDescription": "Enterprise controls scope notebooks, data sources, and audit activity inside this workspace.",
+    "audit": "Audit",
+    "auditDescription": "Recent governed actions in this workspace.",
+    "refreshAudit": "Refresh audit log",
+    "noAuditEvents": "No audit events recorded yet",
+    "systemActor": "System"
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",

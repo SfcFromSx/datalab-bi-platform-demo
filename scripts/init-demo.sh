@@ -7,25 +7,43 @@ set -euo pipefail
 
 BASE="${1:-http://127.0.0.1:8000}"
 API="$BASE/api"
+WORKSPACE="${DATALAB_WORKSPACE:-demo-hq}"
+USER_EMAIL="${DATALAB_USER_EMAIL:-admin@datalab.local}"
+AUTH_HEADERS=(
+  -H "X-DataLab-Workspace: $WORKSPACE"
+  -H "X-DataLab-User-Email: $USER_EMAIL"
+)
 
 echo "🚀 DataLab Demo Initializer"
 echo "   Target: $API"
+echo "   Workspace: $WORKSPACE"
+echo "   User: $USER_EMAIL"
 echo ""
 
 # Helper: POST JSON and return response body
-post() { curl -sf -X POST "$1" -H "Content-Type: application/json" -d "$2"; }
-put()  { curl -sf -X PUT  "$1" -H "Content-Type: application/json" -d "$2"; }
+get() { curl -sf "${AUTH_HEADERS[@]}" "$1"; }
+post() {
+  curl -sf "${AUTH_HEADERS[@]}" -X POST "$1" \
+    -H "Content-Type: application/json" \
+    -d "$2"
+}
+put() {
+  curl -sf "${AUTH_HEADERS[@]}" -X PUT "$1" \
+    -H "Content-Type: application/json" \
+    -d "$2"
+}
+delete() { curl -sf "${AUTH_HEADERS[@]}" -X DELETE "$1"; }
 
 # ─── Clear existing data ────────────────────────────────────────────
 echo "🧹 Clearing existing notebooks..."
-for id in $(curl -sf "$API/notebooks" | jq -r '.[].id'); do
-  curl -sf -X DELETE "$API/notebooks/$id" > /dev/null
+for id in $(get "$API/notebooks" | jq -r '.[].id'); do
+  delete "$API/notebooks/$id" > /dev/null
   echo "   Deleted notebook $id"
 done
 
 echo "🧹 Clearing existing folders..."
-for id in $(curl -sf "$API/folders" | jq -r '.[].id'); do
-  curl -sf -X DELETE "$API/folders/$id" > /dev/null
+for id in $(get "$API/folders" | jq -r '.[].id'); do
+  delete "$API/folders/$id" > /dev/null
   echo "   Deleted folder $id"
 done
 
@@ -49,7 +67,8 @@ echo "📊 Uploading datasets..."
 upload() {
   local file="data/$1.csv"
   if [ -f "$file" ]; then
-    curl -sf -X POST "$API/datasources/upload-csv" -F "file=@$file" > /dev/null
+    curl -sf "${AUTH_HEADERS[@]}" -X POST "$API/datasources/upload-csv" \
+      -F "file=@$file" > /dev/null
     echo "   ✅ Uploaded $1.csv"
   else
     echo "   ⚠️ Warning: $file not found"
@@ -211,14 +230,56 @@ post "$API/notebooks/$NB6/cells" '{
   "position":0
 }' > /dev/null
 
+# --- 7) Enterprise Runtime Demo (in Analytics) ---
+NB_RUNTIME=$(post "$API/notebooks" '{"title":"Enterprise Runtime Demo","description":"Validates stateless DAG cell agents, file-backed IPC, and AI editing progress"}' | jq -r '.id')
+put "$API/notebooks/$NB_RUNTIME" "{\"folder_id\":\"$F_ANALYTICS\"}" > /dev/null
+echo "   ✅ Enterprise Runtime Demo → Analytics"
+
+post "$API/notebooks/$NB_RUNTIME/cells" '{
+  "cell_type":"markdown",
+  "source":"# Enterprise Runtime Demo\nEach cell now runs as its own cell agent.\n\n- A stateless DAG is rebuilt on every execution\n- Cell agents exchange context through file-backed inbox/outbox messages\n- Every cell has its own workspace and runtime manifest\n\nRecommended checks:\n1. Run the chart cell directly and confirm upstream SQL + Python + SQL cells execute automatically.\n2. Expand the `Cell Agent Runtime` panel under any executed cell.\n3. Use AI Edit on any cell and watch the right-side progress rail show DAG and IPC stages.",
+  "position":0
+}' > /dev/null
+
+post "$API/notebooks/$NB_RUNTIME/cells" '{
+  "cell_type":"sql",
+  "source":"-- output: sales_summary\nSELECT\n  product_name,\n  SUM(quantity * price) AS revenue,\n  SUM(quantity) AS units_sold\nFROM sales\nGROUP BY product_name\nORDER BY revenue DESC\nLIMIT 5;",
+  "position":1
+}' > /dev/null
+
+post "$API/notebooks/$NB_RUNTIME/cells" '{
+  "cell_type":"python",
+  "source":"product_metrics = sales_summary.assign(\n    avg_selling_price=sales_summary[\"revenue\"] / sales_summary[\"units_sold\"]\n).sort_values(\"revenue\", ascending=False)\n\nprint(product_metrics.to_string(index=False))",
+  "position":2
+}' > /dev/null
+
+post "$API/notebooks/$NB_RUNTIME/cells" '{
+  "cell_type":"sql",
+  "source":"-- output: premium_products\nSELECT\n  product_name,\n  revenue,\n  avg_selling_price\nFROM product_metrics\nWHERE revenue >= 5000\nORDER BY revenue DESC;",
+  "position":3
+}' > /dev/null
+
+post "$API/notebooks/$NB_RUNTIME/cells" '{
+  "cell_type":"chart",
+  "source":"{\"data_source\":\"premium_products\",\"chart_type\":\"bar\",\"title\":{\"text\":\"Premium Products\",\"left\":\"center\"},\"x_field\":\"product_name\",\"y_field\":[\"revenue\",\"avg_selling_price\"],\"legend\":{\"bottom\":0}}",
+  "position":4
+}' > /dev/null
+
+post "$API/notebooks/$NB_RUNTIME/cells" '{
+  "cell_type":"markdown",
+  "source":"## Live Notebook Summary\nRows in filtered SQL output: {{ premium_products.row_count }}\n\nColumns in filtered SQL output: {{ premium_products.columns }}\n\nPreview rows: {{ premium_products.preview }}",
+  "position":5
+}' > /dev/null
+
 # ─── Summary ────────────────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "✅ Demo data created successfully!"
 echo ""
 echo "   📁 3 folders: Analytics, Reports, Experiments"
-echo "   📓 7 notebooks (5 in folders, 2 uncategorized)"
-echo "   📝 ~20 cells (markdown, sql, python, chart)"
+echo "   📓 8 notebooks (6 in folders, 2 uncategorized)"
+echo "   📝 ~25 cells (markdown, sql, python, chart)"
+echo "   🧪 Enterprise Runtime Demo validates SQL → Python → SQL → Chart → Markdown cell agents"
 echo ""
-echo "   Open http://localhost:5171 to explore!"
+echo "   Open http://localhost:5173 to explore!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

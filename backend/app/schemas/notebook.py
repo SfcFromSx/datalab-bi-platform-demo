@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class NotebookCreate(BaseModel):
     title: str = "Untitled Notebook"
     description: str = ""
+    folder_id: Optional[str] = None
 
 
 class NotebookUpdate(BaseModel):
@@ -19,6 +20,7 @@ class NotebookUpdate(BaseModel):
 
 class CellResponse(BaseModel):
     id: str
+    workspace_id: str
     notebook_id: str
     cell_type: str
     source: str
@@ -33,6 +35,7 @@ class CellResponse(BaseModel):
 
 class NotebookResponse(BaseModel):
     id: str
+    workspace_id: str
     title: str
     description: str
     folder_id: Optional[str] = None
@@ -45,6 +48,7 @@ class NotebookResponse(BaseModel):
 
 class NotebookListResponse(BaseModel):
     id: str
+    workspace_id: str
     title: str
     description: str
     folder_id: Optional[str] = None

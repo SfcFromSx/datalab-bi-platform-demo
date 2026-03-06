@@ -6,6 +6,7 @@ from app.schemas.cell import (
     CellMoveRequest,
     CellUpdate,
 )
+from app.schemas.enterprise import AuditEventResponse, EnterpriseContextResponse
 from app.schemas.knowledge import (
     KnowledgeGenerateRequest,
     KnowledgeNodeCreate,
@@ -38,4 +39,6 @@ __all__ = [
     "KnowledgeSearchRequest",
     "KnowledgeSearchResponse",
     "KnowledgeGenerateRequest",
+    "EnterpriseContextResponse",
+    "AuditEventResponse",
 ]

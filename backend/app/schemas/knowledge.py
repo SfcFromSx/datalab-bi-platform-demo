@@ -18,6 +18,7 @@ class KnowledgeNodeCreate(BaseModel):
 
 class KnowledgeNodeResponse(BaseModel):
     id: str
+    workspace_id: str
     node_type: str
     name: str
     parent_id: Optional[str] = None
