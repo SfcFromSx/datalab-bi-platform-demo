@@ -37,6 +37,7 @@ export interface CellAIState {
   message: string;
   progress: number;
   draft: string;
+  prompt?: string;
   details?: CellAgentRuntimeInfo | null;
   error?: string | null;
 }

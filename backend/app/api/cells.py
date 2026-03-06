@@ -201,6 +201,7 @@ async def edit_cell_with_ai(
                 "stage": "context",
                 "message": "Initializing AI rewrite engine",
                 "progress": 0.05,
+                "prompt": data.prompt,
             },
         )
 

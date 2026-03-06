@@ -75,6 +75,7 @@ export const editCellWithAIStream = async (
       stage: string;
       message: string;
       progress: number;
+      prompt?: string;
       details?: CellAgentRuntimeInfo;
     }) => void;
     onChunk?: (payload: { content: string }) => void;

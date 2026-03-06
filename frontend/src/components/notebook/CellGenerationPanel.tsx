@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronDown, ChevronUp, LoaderCircle, Sparkles, X, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronUp, LoaderCircle, MessageSquare, Sparkles, X, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import type { CellAIState } from '../../types';
 
@@ -92,6 +92,18 @@ export default function CellGenerationPanel({ state, onClose, onClear }: Props) 
               style={{ width: `${Math.max(4, state.progress * 100)}%` }}
             />
           </div>
+
+          {state.prompt && (
+            <div className="mt-4 p-3 bg-indigo-50/50 dark:bg-indigo-900/10 border border-indigo-100/50 dark:border-indigo-800/30 rounded-xl">
+              <div className="flex items-center gap-2 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-indigo-500 dark:text-indigo-400">
+                <MessageSquare className="w-3 h-3" />
+                User Request
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 italic leading-relaxed">
+                "{state.prompt}"
+              </p>
+            </div>
+          )}
 
           <div className="mt-4 space-y-4">
             <div>
