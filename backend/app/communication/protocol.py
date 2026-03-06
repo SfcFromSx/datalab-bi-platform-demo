@@ -7,7 +7,7 @@ agents only receive relevant information from their predecessors.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from app.communication.fsm import AgentFSM, FSMState
 from app.communication.info_unit import InformationUnit

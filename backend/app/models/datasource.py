@@ -28,16 +28,12 @@ class DataSource(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    workspace_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
-    )
     name: Mapped[str] = mapped_column(String(128))
     ds_type: Mapped[DataSourceType] = mapped_column(Enum(DataSourceType))
     connection_string: Mapped[str] = mapped_column(Text, default="")
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
-    workspace = relationship("Workspace", back_populates="datasources")
 
     def __repr__(self) -> str:
         return f"<DataSource {self.id[:8]} '{self.name}'>"

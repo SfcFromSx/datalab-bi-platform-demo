@@ -11,11 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.enterprise import EnterpriseContext, log_audit_event, require_role
-from app.enterprise.resources import require_workspace_resource
 from app.execution import sql_executor
 from app.models import DataSource, DataSourceType
-from app.models.membership import WorkspaceRole
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +40,10 @@ class SQLQueryRequest(BaseModel):
 
 @router.get("/datasources", response_model=list[DataSourceResponse])
 async def list_datasources(
-    context: EnterpriseContext = Depends(require_role(WorkspaceRole.VIEWER)),
     session: AsyncSession = Depends(get_session),
 ):
     result = await session.execute(
-        select(DataSource).where(DataSource.workspace_id == context.workspace.id)
+        select(DataSource)
     )
     datasources = result.scalars().all()
     return [
@@ -61,11 +57,9 @@ async def list_datasources(
 @router.post("/datasources", response_model=DataSourceResponse, status_code=201)
 async def create_datasource(
     data: DataSourceCreate,
-    context: EnterpriseContext = Depends(require_role(WorkspaceRole.ANALYST)),
     session: AsyncSession = Depends(get_session),
 ):
     ds = DataSource(
-        workspace_id=context.workspace.id,
         name=data.name,
         ds_type=data.ds_type,
         connection_string=data.connection_string,
@@ -73,14 +67,6 @@ async def create_datasource(
     session.add(ds)
     await session.flush()
     await session.refresh(ds)
-    await log_audit_event(
-        session,
-        context,
-        action="datasource.create",
-        resource_type="datasource",
-        resource_id=ds.id,
-        details={"name": ds.name, "type": ds.ds_type.value},
-    )
     return DataSourceResponse(
         id=ds.id, name=ds.name, ds_type=ds.ds_type.value, metadata=ds.metadata_
     )
@@ -89,7 +75,6 @@ async def create_datasource(
 @router.post("/datasources/upload-csv", response_model=DataSourceResponse)
 async def upload_csv(
     file: UploadFile = File(...),
-    context: EnterpriseContext = Depends(require_role(WorkspaceRole.ANALYST)),
     session: AsyncSession = Depends(get_session),
 ):
     if not file.filename or not file.filename.endswith(".csv"):
@@ -97,7 +82,7 @@ async def upload_csv(
 
     table_name = Path(file.filename).stem.replace(" ", "_").replace("-", "_")
 
-    data_dir = Path("./data/uploads") / context.workspace.slug
+    data_dir = Path("./data/uploads")
     data_dir.mkdir(parents=True, exist_ok=True)
     file_path = data_dir / file.filename
 
@@ -105,7 +90,6 @@ async def upload_csv(
     file_path.write_bytes(content)
 
     ds = DataSource(
-        workspace_id=context.workspace.id,
         name=table_name,
         ds_type=DataSourceType.CSV,
         connection_string=str(file_path),
@@ -132,17 +116,6 @@ async def upload_csv(
     }
     await session.flush()
     await session.refresh(ds)
-    await log_audit_event(
-        session,
-        context,
-        action="datasource.upload_csv",
-        resource_type="datasource",
-        resource_id=ds.id,
-        details={
-            "name": ds.name,
-            "row_count": ds.metadata_.get("row_count") if ds.metadata_ else 0,
-        },
-    )
 
     return DataSourceResponse(
         id=ds.id, name=ds.name, ds_type=ds.ds_type.value, metadata=ds.metadata_
@@ -152,16 +125,11 @@ async def upload_csv(
 @router.get("/datasources/{datasource_id}/schema")
 async def get_datasource_schema(
     datasource_id: str,
-    context: EnterpriseContext = Depends(require_role(WorkspaceRole.VIEWER)),
     session: AsyncSession = Depends(get_session),
 ):
-    ds = await require_workspace_resource(
-        session,
-        DataSource,
-        datasource_id,
-        context.workspace.id,
-        "DataSource not found",
-    )
+    ds = await session.get(DataSource, datasource_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail="DataSource not found")
 
     tables = sql_executor.get_tables(datasource_id)
     result = {}
@@ -179,24 +147,11 @@ async def get_datasource_schema(
 async def query_datasource(
     datasource_id: str,
     data: SQLQueryRequest,
-    context: EnterpriseContext = Depends(require_role(WorkspaceRole.ANALYST)),
     session: AsyncSession = Depends(get_session),
 ):
-    ds = await require_workspace_resource(
-        session,
-        DataSource,
-        datasource_id,
-        context.workspace.id,
-        "DataSource not found",
-    )
+    ds = await session.get(DataSource, datasource_id)
+    if not ds:
+        raise HTTPException(status_code=404, detail="DataSource not found")
 
     result = sql_executor.execute(data.query, datasource_id)
-    await log_audit_event(
-        session,
-        context,
-        action="datasource.query",
-        resource_type="datasource",
-        resource_id=ds.id,
-        details={"query_length": len(data.query)},
-    )
     return result

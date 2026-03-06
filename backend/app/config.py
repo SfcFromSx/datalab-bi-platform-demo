@@ -40,12 +40,7 @@ class Settings(BaseSettings):
     port: int = 8000
     debug: bool = True
 
-    # Enterprise defaults
-    default_workspace_slug: str = "demo-hq"
-    default_workspace_name: str = "Demo HQ"
-    default_workspace_description: str = "Default enterprise workspace for local development."
-    default_user_email: str = "admin@datalab.local"
-    default_user_name: str = "Enterprise Admin"
+
 
     # Paths
     @property

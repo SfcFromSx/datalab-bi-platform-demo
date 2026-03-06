@@ -6,21 +6,10 @@ import Notebook from '../notebook/Notebook';
 import ChatPanel from '../chat/ChatPanel';
 import { useUIStore } from '../../stores/uiStore';
 import { useNotebookStore } from '../../stores/notebookStore';
-import { useEnterpriseStore } from '../../stores/enterpriseStore';
 
 export default function MainLayout() {
   const { sidebarOpen, chatOpen, toggleChat } = useUIStore();
-  const { activeNotebook } = useNotebookStore();
-  const { fetchContext, workspaceKey } = useEnterpriseStore();
   const [selectedNotebookId, setSelectedNotebookId] = useState<string | null>(null);
-
-  useEffect(() => {
-    void fetchContext();
-  }, [fetchContext]);
-
-  useEffect(() => {
-    setSelectedNotebookId(null);
-  }, [workspaceKey]);
 
   const handleSelectNotebook = (id: string | null) => {
     setSelectedNotebookId(id);
@@ -57,9 +46,9 @@ export default function MainLayout() {
             </div>
           )}
         </main>
-      </div>
 
-      <ChatPanel />
+        <ChatPanel />
+      </div>
 
       {!chatOpen && (
         <button

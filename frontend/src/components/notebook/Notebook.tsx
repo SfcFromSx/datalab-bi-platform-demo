@@ -4,6 +4,7 @@ import { useNotebookStore } from '../../stores/notebookStore';
 import CellContainer from './CellContainer';
 import AddCellButton from './AddCellButton';
 import LoadingSpinner from '../common/LoadingSpinner';
+import { wsClient } from '../../services/websocket';
 
 interface Props {
   notebookId: string;
@@ -15,6 +16,10 @@ export default function Notebook({ notebookId }: Props) {
 
   useEffect(() => {
     loadNotebook(notebookId);
+    wsClient.connect(notebookId);
+    return () => {
+      wsClient.disconnect();
+    };
   }, [notebookId, loadNotebook]);
 
   if (loading && !activeNotebook) {

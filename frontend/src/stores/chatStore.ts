@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { ChatMessage } from '../types';
-import { agentQuery } from '../services/api';
+import { wsClient } from '../services/websocket';
 
 interface ChatState {
   messages: ChatMessage[];
@@ -11,6 +11,7 @@ interface ChatState {
 interface ChatActions {
   sendQuery: (query: string, notebookId: string, datasourceId?: string) => Promise<void>;
   addMessage: (message: ChatMessage) => void;
+  updateMessage: (id: string, updates: Partial<ChatMessage>) => void;
   clearHistory: () => void;
   setDatasource: (id: string | null) => void;
 }
@@ -32,32 +33,19 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
     };
     set((s) => ({ messages: [...s.messages, userMessage], isLoading: true }));
 
-    try {
-      const response = await agentQuery(query, notebookId, dsId);
-      const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: response.message,
-        timestamp: Date.now(),
-        cells_created: response.cells_created,
-      };
-      set((s) => ({
-        messages: [...s.messages, assistantMessage],
-        isLoading: false,
-      }));
-    } catch (e) {
-      const errorMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: e instanceof Error ? e.message : 'Query failed',
-        timestamp: Date.now(),
-      };
-      set((s) => ({
-        messages: [...s.messages, errorMessage],
-        isLoading: false,
-      }));
-    }
+    wsClient.send('agent_query', {
+      query,
+      datasource_id: dsId,
+    });
   },
+
+  addMessage: (message: ChatMessage) =>
+    set((s) => ({ messages: [...s.messages, message] })),
+
+  updateMessage: (id: string, updates: Partial<ChatMessage>) =>
+    set((s) => ({
+      messages: s.messages.map((m) => (m.id === id ? { ...m, ...updates } : m)),
+    })),
 
   addMessage: (message: ChatMessage) =>
     set((s) => ({ messages: [...s.messages, message] })),
@@ -66,3 +54,36 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
 
   setDatasource: (id: string | null) => set({ activeDatasourceId: id }),
 }));
+
+wsClient.on('agent_progress', (message) => {
+  const payload = message.payload as Record<string, any>;
+  if (!payload.task_id) return;
+
+  const store = useChatStore.getState();
+  const existing = store.messages.find((m) => m.id === payload.task_id);
+
+  if (existing) {
+    store.updateMessage(payload.task_id, {
+      content: payload.message || existing.content,
+    });
+  } else {
+    store.addMessage({
+      id: payload.task_id,
+      role: 'assistant',
+      content: payload.message || 'Processing...',
+      timestamp: Date.now(),
+    });
+  }
+});
+
+wsClient.on('agent_complete', (message) => {
+  const payload = message.payload as Record<string, any>;
+  if (!payload.task_id) return;
+
+  const store = useChatStore.getState();
+  store.updateMessage(payload.task_id, {
+    content: payload.message || 'Completed',
+    cells_created: payload.cells_created,
+  });
+  useChatStore.setState({ isLoading: false });
+});

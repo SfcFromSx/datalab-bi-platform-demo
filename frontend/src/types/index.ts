@@ -2,7 +2,6 @@ export type CellType = 'sql' | 'python' | 'chart' | 'markdown';
 
 export interface Cell {
   id: string;
-  workspace_id: string;
   notebook_id: string;
   cell_type: CellType;
   source: string;
@@ -80,7 +79,6 @@ export interface TableData {
 
 export interface Notebook {
   id: string;
-  workspace_id: string;
   title: string;
   description: string;
   folder_id: string | null;
@@ -91,7 +89,6 @@ export interface Notebook {
 
 export interface NotebookListItem {
   id: string;
-  workspace_id: string;
   title: string;
   description: string;
   folder_id: string | null;
@@ -102,7 +99,6 @@ export interface NotebookListItem {
 
 export interface Folder {
   id: string;
-  workspace_id: string;
   name: string;
   position: number;
   created_at: string;
@@ -162,35 +158,3 @@ export interface ChartConfig {
   option?: Record<string, unknown>;
 }
 
-export interface EnterpriseWorkspace {
-  id: string;
-  name: string;
-  slug: string;
-  description: string;
-  role: 'owner' | 'admin' | 'analyst' | 'viewer';
-}
-
-export interface EnterpriseUser {
-  id: string;
-  email: string;
-  display_name: string;
-}
-
-export interface EnterpriseContext {
-  request_id: string;
-  workspace: EnterpriseWorkspace;
-  user: EnterpriseUser;
-  available_workspaces: EnterpriseWorkspace[];
-}
-
-export interface AuditEvent {
-  id: string;
-  action: string;
-  resource_type: string;
-  resource_id: string | null;
-  status: 'success' | 'failure';
-  request_id: string;
-  actor_email: string | null;
-  details: Record<string, unknown> | null;
-  created_at: string;
-}

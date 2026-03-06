@@ -6,7 +6,6 @@ import logging
 import time
 import uuid
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Any, Optional
 
 from jinja2 import Environment, FileSystemLoader

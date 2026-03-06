@@ -6,16 +6,13 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents import proxy_agent
 from app.database import get_session
-from app.enterprise import EnterpriseContext, log_audit_event, require_role
-from app.enterprise.resources import require_workspace_resource
 from app.models import Cell, CellType, Notebook
-from app.models.membership import WorkspaceRole
 from app.schemas import AgentQueryRequest, AgentQueryResponse
 
 logger = logging.getLogger(__name__)
@@ -26,22 +23,16 @@ router = APIRouter(tags=["agents"])
 @router.post("/agents/query", response_model=AgentQueryResponse)
 async def agent_query(
     data: AgentQueryRequest,
-    request_context: EnterpriseContext = Depends(require_role(WorkspaceRole.ANALYST)),
     session: AsyncSession = Depends(get_session),
 ):
-    nb = await require_workspace_resource(
-        session,
-        Notebook,
-        data.notebook_id,
-        request_context.workspace.id,
-        "Notebook not found",
-    )
+    nb = await session.get(Notebook, data.notebook_id)
+    if not nb:
+        raise HTTPException(status_code=404, detail="Notebook not found")
 
     result = await session.execute(
         select(Cell)
         .where(
             Cell.notebook_id == data.notebook_id,
-            Cell.workspace_id == request_context.workspace.id,
         )
         .order_by(Cell.position)
     )
@@ -110,7 +101,6 @@ async def agent_query(
             cell_output = result_item.get("output")
 
             new_cell = Cell(
-                workspace_id=request_context.workspace.id,
                 notebook_id=data.notebook_id,
                 cell_type=cell_type,
                 source=cell_source,
@@ -129,18 +119,10 @@ async def agent_query(
             })
             next_pos += 1
 
-    await log_audit_event(
-        session,
-        request_context,
-        action="agent.query",
-        resource_type="notebook",
-        resource_id=nb.id,
-        details={
-            "query_length": len(data.query),
-            "datasource_id": data.datasource_id,
-            "cells_created": len(cells_created),
-        },
-    )
+    # Extract the conversational message if available
+    agent_msg = "Agent task completed successfully"
+    if isinstance(content, dict) and "message" in content:
+        agent_msg = content["message"]
 
     return AgentQueryResponse(
         task_id=(
@@ -149,7 +131,7 @@ async def agent_query(
             else str(uuid.uuid4())
         ),
         status="completed",
-        message="Agent task completed successfully",
+        message=agent_msg,
         cells_created=cells_created,
     )
 

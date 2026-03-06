@@ -20,7 +20,6 @@ from app.notebook_runtime import (
     summarize_output,
 )
 
-
 FILE_EXTENSIONS = {
     "sql": ".sql",
     "python": ".py",
@@ -30,7 +29,7 @@ FILE_EXTENSIONS = {
 
 
 @dataclass
-class CellAgentPaths:
+class CellPaths:
     workspace_dir: Path
     agent_file: Path
     source_file: Path
@@ -44,24 +43,23 @@ class CellAgentPaths:
 
 
 @dataclass
-class CellAgentPlan:
+class CellRuntimePlan:
     bundle: NotebookRuntimeBundle
     plan: list[str]
-    workspace_key: str
-    paths_by_id: dict[str, CellAgentPaths]
+    paths_by_id: dict[str, CellPaths]
 
 
 @dataclass
-class CellAgentSessionResult:
+class CellRuntimeSessionResult:
     run_id: str
     plan: list[str]
     outputs_by_id: dict[str, dict[str, Any]]
-    paths_by_id: dict[str, CellAgentPaths]
+    paths_by_id: dict[str, CellPaths]
 
 
-class CellAgentRuntime:
+class CellRuntime:
     def __init__(self, root_dir: Path | None = None):
-        self.root_dir = Path(root_dir) if root_dir else settings.data_dir / "cell_agents"
+        self.root_dir = Path(root_dir) if root_dir else settings.data_dir / "cell_runtime"
         self.root_dir.mkdir(parents=True, exist_ok=True)
 
     def build_plan(
@@ -69,28 +67,20 @@ class CellAgentRuntime:
         cells: Iterable[Any],
         target_cell_id: str,
         source_overrides: dict[str, str] | None = None,
-        workspace_key: str | None = None,
-    ) -> CellAgentPlan:
-        prepared_cells = self._prepare_cells(cells, source_overrides, workspace_key)
+    ) -> CellRuntimePlan:
+        prepared_cells = self._prepare_cells(cells, source_overrides)
         bundle = build_runtime_bundle(prepared_cells)
         if target_cell_id not in bundle.cells_by_id:
-            raise ValueError(f"Unknown cell agent '{target_cell_id}'")
+            raise ValueError(f"Unknown cell runtime '{target_cell_id}'")
 
         plan = bundle.dag.get_execution_plan(target_cell_id)
-        resolved_workspace_key = (
-            workspace_key
-            or bundle.cells_by_id[target_cell_id].get("workspace_key")
-            or bundle.cells_by_id[target_cell_id].get("workspace_id")
-            or "workspace"
-        )
         paths_by_id = {
-            cell_id: self._paths_for_cell(bundle.cells_by_id[cell_id], resolved_workspace_key)
+            cell_id: self._paths_for_cell(bundle.cells_by_id[cell_id])
             for cell_id in plan
         }
-        return CellAgentPlan(
+        return CellRuntimePlan(
             bundle=bundle,
             plan=plan,
-            workspace_key=resolved_workspace_key,
             paths_by_id=paths_by_id,
         )
 
@@ -98,15 +88,13 @@ class CellAgentRuntime:
         self,
         cells: Iterable[Any],
         target_cell_id: str,
-        workspace_key: str | None = None,
         source_overrides: dict[str, str] | None = None,
         datasources: Sequence[DataSource] | None = None,
-    ) -> CellAgentSessionResult:
+    ) -> CellRuntimeSessionResult:
         plan = self.build_plan(
             cells,
             target_cell_id,
             source_overrides=source_overrides,
-            workspace_key=workspace_key,
         )
         run_id = uuid.uuid4().hex
         outputs_by_id: dict[str, dict[str, Any]] = {}
@@ -124,7 +112,8 @@ class CellAgentRuntime:
             paths = plan.paths_by_id[cell_id]
 
             dependencies = plan.bundle.dag.get_direct_dependencies(cell_id)
-            ancestors = [candidate for candidate in plan.plan if candidate != cell_id and candidate in plan.bundle.dag.get_ancestors(cell_id)]
+            ancestors_set = set(plan.bundle.dag.get_ancestors(cell_id))
+            ancestors = [candidate for candidate in plan.plan if candidate != cell_id and candidate in ancestors_set]
             inbox_messages = self._read_inbox(paths.inbox_dir)
             tables = self._load_tables(plan, cell_id)
             bootstrap_code = self._build_python_bootstrap(plan, cell_id)
@@ -192,7 +181,7 @@ class CellAgentRuntime:
             self._write_json(paths.output_file, output)
             outputs_by_id[cell_id] = output
 
-        return CellAgentSessionResult(
+        return CellRuntimeSessionResult(
             run_id=run_id,
             plan=plan.plan,
             outputs_by_id=outputs_by_id,
@@ -203,14 +192,12 @@ class CellAgentRuntime:
         self,
         cells: Iterable[Any],
         target_cell_id: str,
-        workspace_key: str | None = None,
         source_overrides: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         plan = self.build_plan(
             cells,
             target_cell_id,
             source_overrides=source_overrides,
-            workspace_key=workspace_key,
         )
         paths = plan.paths_by_id[target_cell_id]
         return {
@@ -231,14 +218,12 @@ class CellAgentRuntime:
         cells: Iterable[Any],
         target_cell_id: str,
         prompt: str,
-        workspace_key: str | None = None,
         source_overrides: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         plan = self.build_plan(
             cells,
             target_cell_id,
             source_overrides=source_overrides,
-            workspace_key=workspace_key,
         )
         cell = plan.bundle.cells_by_id[target_cell_id]
         paths = plan.paths_by_id[target_cell_id]
@@ -276,7 +261,6 @@ class CellAgentRuntime:
         self,
         cells: Iterable[Any],
         source_overrides: dict[str, str] | None,
-        workspace_key: str | None,
     ) -> list[dict[str, Any]]:
         prepared: list[dict[str, Any]] = []
         for cell in cells:
@@ -288,8 +272,6 @@ class CellAgentRuntime:
             prepared.append(
                 {
                     "id": cell_id,
-                    "workspace_id": getattr(cell, "workspace_id", None),
-                    "workspace_key": workspace_key,
                     "notebook_id": getattr(cell, "notebook_id", None),
                     "cell_type": cell_type,
                     "source": (
@@ -304,15 +286,14 @@ class CellAgentRuntime:
             )
         return prepared
 
-    def _paths_for_cell(self, cell: dict[str, Any], workspace_key: str) -> CellAgentPaths:
+    def _paths_for_cell(self, cell: dict[str, Any]) -> CellPaths:
         workspace_dir = (
             self.root_dir
-            / self._safe_segment(workspace_key)
             / self._safe_segment(cell.get("notebook_id") or "notebook")
             / f"{int(cell.get('position', 0)):03d}-{cell.get('cell_type', 'cell')}-{str(cell.get('id', 'cell'))[:8]}"
         )
         extension = FILE_EXTENSIONS.get(cell.get("cell_type", ""), ".txt")
-        return CellAgentPaths(
+        return CellPaths(
             workspace_dir=workspace_dir,
             agent_file=workspace_dir / "agent.json",
             source_file=workspace_dir / f"source{extension}",
@@ -325,7 +306,7 @@ class CellAgentRuntime:
             outbox_dir=workspace_dir / "outbox",
         )
 
-    def _prepare_workspace(self, cell: dict[str, Any], paths: CellAgentPaths) -> None:
+    def _prepare_workspace(self, cell: dict[str, Any], paths: CellPaths) -> None:
         paths.workspace_dir.mkdir(parents=True, exist_ok=True)
         for directory in (paths.inbox_dir, paths.outbox_dir):
             shutil.rmtree(directory, ignore_errors=True)
@@ -335,14 +316,13 @@ class CellAgentRuntime:
             {
                 "cell_id": cell["id"],
                 "cell_type": cell["cell_type"],
-                "workspace_id": cell.get("workspace_id"),
                 "notebook_id": cell.get("notebook_id"),
                 "position": cell.get("position", 0),
             },
         )
         self._write_text(paths.source_file, cell.get("source", ""))
 
-    def _load_tables(self, plan: CellAgentPlan, cell_id: str) -> dict[str, dict[str, Any]]:
+    def _load_tables(self, plan: CellRuntimePlan, cell_id: str) -> dict[str, dict[str, Any]]:
         cells: list[dict[str, Any]] = []
         for ancestor_id in plan.bundle.dag.get_execution_plan(cell_id):
             if ancestor_id == cell_id:
@@ -363,7 +343,7 @@ class CellAgentRuntime:
             )
         return build_table_catalog(cells)
 
-    def _build_python_bootstrap(self, plan: CellAgentPlan, cell_id: str) -> str:
+    def _build_python_bootstrap(self, plan: CellRuntimePlan, cell_id: str) -> str:
         code_parts: list[str] = []
         for ancestor_id in plan.bundle.dag.get_execution_plan(cell_id):
             if ancestor_id == cell_id:
@@ -376,7 +356,7 @@ class CellAgentRuntime:
                 code_parts.append(source_file.read_text(encoding="utf-8"))
         return "\n\n".join(part for part in code_parts if part.strip())
 
-    def _bootstrap_sources(self, plan: CellAgentPlan, cell_id: str) -> list[str]:
+    def _bootstrap_sources(self, plan: CellRuntimePlan, cell_id: str) -> list[str]:
         sources: list[str] = []
         for ancestor_id in plan.bundle.dag.get_execution_plan(cell_id):
             if ancestor_id == cell_id:
@@ -460,7 +440,7 @@ class CellAgentRuntime:
 
     def _publish_messages(
         self,
-        plan: CellAgentPlan,
+        plan: CellRuntimePlan,
         cell_id: str,
         output: dict[str, Any],
         fingerprint: str,
@@ -486,7 +466,7 @@ class CellAgentRuntime:
 
     def _message_payload(
         self,
-        plan: CellAgentPlan,
+        plan: CellRuntimePlan,
         cell_id: str,
         output: dict[str, Any],
         fingerprint: str,
@@ -515,7 +495,7 @@ class CellAgentRuntime:
                 messages.append(payload)
         return messages
 
-    def _fingerprint(self, plan: CellAgentPlan, cell_id: str) -> str:
+    def _fingerprint(self, plan: CellRuntimePlan, cell_id: str) -> str:
         cell = plan.bundle.cells_by_id[cell_id]
         payload = {
             "cell_id": cell_id,
@@ -524,7 +504,10 @@ class CellAgentRuntime:
             "dependencies": [],
         }
         for dependency_id in plan.bundle.dag.get_direct_dependencies(cell_id):
-            dependency_output = self._read_json(plan.paths_by_id[dependency_id].output_file)
+            paths = plan.paths_by_id.get(dependency_id)
+            if not paths or not paths.output_file.exists():
+                continue
+            dependency_output = self._read_json(paths.output_file)
             payload["dependencies"].append(
                 {
                     "cell_id": dependency_id,
@@ -538,7 +521,7 @@ class CellAgentRuntime:
     def _task_markdown(self, cell: dict[str, Any], payload: dict[str, Any]) -> str:
         return "\n".join(
             [
-                f"# Cell Agent {cell['id']}",
+                f"# Cell Runtime {cell['id']}",
                 "",
                 f"- Type: {cell['cell_type']}",
                 f"- Mode: {payload['mode']}",
@@ -551,7 +534,7 @@ class CellAgentRuntime:
                 "```",
                 cell.get("source", ""),
                 "```",
-            ]
+                ]
         )
 
     @staticmethod
@@ -611,4 +594,4 @@ class CellAgentRuntime:
         return json.loads(path.read_text(encoding="utf-8"))
 
 
-cell_agent_runtime = CellAgentRuntime()
+cell_runtime = CellRuntime()

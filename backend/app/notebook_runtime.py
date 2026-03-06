@@ -31,6 +31,15 @@ def build_runtime_bundle(cells: Iterable[Any]) -> NotebookRuntimeBundle:
     )
     dag = CellDependencyDAG()
     dag.build(ordered_cells)
+    
+    for cell in ordered_cells:
+        node = dag.get_node(cell["id"])
+        if node:
+            cell["variables_defined"] = list(node.variables_defined)
+            cell["variables_referenced"] = list(node.variables_referenced)
+            cell["ancestors"] = list(node.ancestors)
+            cell["descendants"] = list(node.descendants)
+            
     cells_by_id = {cell["id"]: cell for cell in ordered_cells}
     retriever = ContextRetriever(dag)
     return NotebookRuntimeBundle(
@@ -219,8 +228,6 @@ def _to_cell_dict(cell: Any) -> dict[str, Any]:
         output = cell.get("output")
         return {
             "id": cell.get("id"),
-            "workspace_id": cell.get("workspace_id"),
-            "workspace_key": cell.get("workspace_key"),
             "notebook_id": cell.get("notebook_id"),
             "cell_type": cell_type.value if hasattr(cell_type, "value") else cell_type,
             "source": cell.get("source", ""),
@@ -234,8 +241,6 @@ def _to_cell_dict(cell: Any) -> dict[str, Any]:
         cell_type = cell_type.value
     return {
         "id": getattr(cell, "id"),
-        "workspace_id": getattr(cell, "workspace_id", None),
-        "workspace_key": getattr(cell, "workspace_key", None),
         "notebook_id": getattr(cell, "notebook_id", None),
         "cell_type": cell_type,
         "source": getattr(cell, "source", ""),

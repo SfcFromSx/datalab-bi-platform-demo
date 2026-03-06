@@ -37,13 +37,11 @@ class KnowledgeRetriever:
         query: str,
         datasource_id: Optional[str] = None,
         top_k: int = 10,
-        workspace_id: Optional[str] = None,
     ) -> list[tuple[KnowledgeNode, float]]:
         coarse_nodes = await self._coarse_retrieval(
             session,
             query,
             datasource_id,
-            workspace_id=workspace_id,
         )
 
         if not coarse_nodes:
@@ -55,7 +53,6 @@ class KnowledgeRetriever:
                 parent = await knowledge_graph.get_node(
                     session,
                     node.parent_id,
-                    workspace_id=workspace_id,
                 )
                 if parent:
                     primary_nodes.append(parent)
@@ -79,21 +76,18 @@ class KnowledgeRetriever:
         session: AsyncSession,
         query: str,
         datasource_id: Optional[str] = None,
-        workspace_id: Optional[str] = None,
     ) -> list[KnowledgeNode]:
         """Lexical + semantic search for initial candidate set."""
         lexical_results = await knowledge_graph.search_by_name(
             session,
             query,
             limit=50,
-            workspace_id=workspace_id,
         )
 
         if datasource_id:
             ds_nodes = await knowledge_graph.get_nodes_by_datasource(
                 session,
                 datasource_id,
-                workspace_id=workspace_id,
             )
             name_matches = [
                 n for n in ds_nodes

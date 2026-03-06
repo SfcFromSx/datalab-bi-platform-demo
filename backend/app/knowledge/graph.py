@@ -28,7 +28,6 @@ class KnowledgeGraph:
         parent_id: Optional[str] = None,
         components: Optional[dict] = None,
         datasource_id: Optional[str] = None,
-        workspace_id: str | None = None,
     ) -> KnowledgeNode:
         node = KnowledgeNode(
             node_type=node_type,
@@ -36,7 +35,6 @@ class KnowledgeGraph:
             parent_id=parent_id,
             components=components or {},
             datasource_id=datasource_id,
-            workspace_id=workspace_id or "",
         )
         session.add(node)
         await session.flush()
@@ -46,11 +44,8 @@ class KnowledgeGraph:
         self,
         session: AsyncSession,
         node_id: str,
-        workspace_id: str | None = None,
     ) -> Optional[KnowledgeNode]:
         stmt = select(KnowledgeNode).where(KnowledgeNode.id == node_id)
-        if workspace_id:
-            stmt = stmt.where(KnowledgeNode.workspace_id == workspace_id)
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -58,15 +53,12 @@ class KnowledgeGraph:
         self,
         session: AsyncSession,
         root_id: Optional[str] = None,
-        workspace_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Get the knowledge tree starting from a root node."""
         if root_id:
             stmt = select(KnowledgeNode).where(KnowledgeNode.parent_id == root_id)
         else:
             stmt = select(KnowledgeNode).where(KnowledgeNode.parent_id.is_(None))
-        if workspace_id:
-            stmt = stmt.where(KnowledgeNode.workspace_id == workspace_id)
 
         result = await session.execute(stmt)
         nodes = result.scalars().all()
@@ -78,7 +70,7 @@ class KnowledgeGraph:
                 "type": node.node_type.value,
                 "name": node.name,
                 "components": node.components,
-                "children": await self.get_tree(session, node.id, workspace_id=workspace_id),
+                "children": await self.get_tree(session, node.id),
             }
             tree.append(node_dict)
         return tree
@@ -87,11 +79,8 @@ class KnowledgeGraph:
         self,
         session: AsyncSession,
         datasource_id: str,
-        workspace_id: str | None = None,
     ) -> list[KnowledgeNode]:
         stmt = select(KnowledgeNode).where(KnowledgeNode.datasource_id == datasource_id)
-        if workspace_id:
-            stmt = stmt.where(KnowledgeNode.workspace_id == workspace_id)
         result = await session.execute(stmt)
         return list(result.scalars().all())
 
@@ -100,12 +89,9 @@ class KnowledgeGraph:
         session: AsyncSession,
         query: str,
         limit: int = 20,
-        workspace_id: str | None = None,
     ) -> list[KnowledgeNode]:
         """Lexical search: find nodes whose name contains the query."""
         stmt = select(KnowledgeNode).where(KnowledgeNode.name.ilike(f"%{query}%"))
-        if workspace_id:
-            stmt = stmt.where(KnowledgeNode.workspace_id == workspace_id)
         result = await session.execute(stmt.limit(limit))
         return list(result.scalars().all())
 
@@ -114,7 +100,6 @@ class KnowledgeGraph:
         session: AsyncSession,
         knowledge: dict[str, Any],
         datasource_id: str,
-        workspace_id: str,
     ) -> None:
         """Populate the knowledge graph from generated knowledge components."""
         db_info = knowledge.get("database", {})
@@ -124,7 +109,6 @@ class KnowledgeGraph:
             db_info.get("name", "database"),
             components=db_info,
             datasource_id=datasource_id,
-            workspace_id=workspace_id,
         )
 
         table_info = knowledge.get("table", {})
@@ -135,7 +119,6 @@ class KnowledgeGraph:
             parent_id=db_node.id,
             components=table_info,
             datasource_id=datasource_id,
-            workspace_id=workspace_id,
         )
 
         columns = knowledge.get("columns", {})
@@ -147,19 +130,16 @@ class KnowledgeGraph:
                 parent_id=table_node.id,
                 components=col_info,
                 datasource_id=datasource_id,
-                workspace_id=workspace_id,
             )
 
     async def delete_for_datasource(
         self,
         session: AsyncSession,
         datasource_id: str,
-        workspace_id: str | None = None,
     ) -> int:
         nodes = await self.get_nodes_by_datasource(
             session,
             datasource_id,
-            workspace_id=workspace_id,
         )
         count = len(nodes)
         for node in nodes:

@@ -11,9 +11,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from app.agents import proxy_agent
-from app.config import settings
 from app.database import async_session_factory
-from app.enterprise import resolve_enterprise_context
 from app.execution import execution_sandbox
 from app.models import Notebook
 from app.models.cell import CellType
@@ -57,21 +55,11 @@ manager = ConnectionManager()
 
 @router.websocket("/ws/{notebook_id}")
 async def websocket_endpoint(websocket: WebSocket, notebook_id: str):
-    workspace_key = websocket.query_params.get("workspace") or settings.default_workspace_slug
-    user_email = websocket.query_params.get("user") or settings.default_user_email
-
     try:
         async with async_session_factory() as session:
-            context = await resolve_enterprise_context(
-                session,
-                workspace_key,
-                user_email,
-                request_id=uuid.uuid4().hex,
-            )
             notebook = await session.scalar(
                 select(Notebook).where(
                     Notebook.id == notebook_id,
-                    Notebook.workspace_id == context.workspace.id,
                 )
             )
             if not notebook:

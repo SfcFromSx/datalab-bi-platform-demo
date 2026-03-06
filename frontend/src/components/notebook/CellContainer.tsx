@@ -3,7 +3,7 @@ import type { Cell } from '../../types';
 import { useNotebookStore } from '../../stores/notebookStore';
 import CellToolbar from './CellToolbar';
 import CellGenerationPanel from './CellGenerationPanel';
-import CellAgentRuntimeCard from './CellAgentRuntimeCard';
+import CellRuntimeCard from './CellRuntimeCard';
 import SqlCell from './SqlCell';
 import PythonCell from './PythonCell';
 import ChartCell from './ChartCell';
@@ -17,6 +17,7 @@ interface Props {
 
 export default function CellContainer({ cell, index, totalCells }: Props) {
   const [isRunning, setIsRunning] = useState(false);
+  const [isPanelVisible, setIsPanelVisible] = useState(true);
   const {
     executeCell,
     deleteCell,
@@ -39,6 +40,7 @@ export default function CellContainer({ cell, index, totalCells }: Props) {
   };
 
   const handleEditAI = async (prompt: string) => {
+    setIsPanelVisible(true);
     await editCellWithAI(cell.id, prompt);
   };
 
@@ -46,6 +48,7 @@ export default function CellContainer({ cell, index, totalCells }: Props) {
   const handleMoveUp = () => index > 0 && moveCell(cell.id, cell.position - 1);
   const handleMoveDown = () => index < totalCells - 1 && moveCell(cell.id, cell.position + 1);
   const handleSourceChange = (value: string) => updateCellSource(cell.id, value);
+  const handleTogglePanel = () => setIsPanelVisible(!isPanelVisible);
 
   const renderCell = () => {
     switch (cell.cell_type) {
@@ -70,6 +73,8 @@ export default function CellContainer({ cell, index, totalCells }: Props) {
           isRunning={isRunning}
           isEditingAI={isEditingAI}
           aiProgress={aiState?.progress}
+          isProgressPanelVisible={isPanelVisible}
+          onToggleProgressPanel={handleTogglePanel}
           onRun={handleRun}
           onDelete={handleDelete}
           onMoveUp={handleMoveUp}
@@ -79,12 +84,13 @@ export default function CellContainer({ cell, index, totalCells }: Props) {
           isLast={index === totalCells - 1}
         />
         {renderCell()}
-        {cell.output?.agent && <CellAgentRuntimeCard runtime={cell.output.agent} />}
+        {cell.output?.agent && <CellRuntimeCard runtime={cell.output.agent} />}
       </div>
-      {aiState && (
+      {aiState && isPanelVisible && (
         <CellGenerationPanel
           state={aiState}
-          onClose={() => clearCellAIState(cell.id)}
+          onClose={() => setIsPanelVisible(false)}
+          onClear={() => clearCellAIState(cell.id)}
         />
       )}
     </div>

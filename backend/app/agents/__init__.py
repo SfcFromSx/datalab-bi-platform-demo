@@ -1,5 +1,6 @@
 from app.agents.base import BaseAgent
 from app.agents.chart_agent import ChartAgent, chart_agent
+from app.agents.chat_agent import ChatAgent, chat_agent
 from app.agents.cleaning_agent import CleaningAgent, cleaning_agent
 from app.agents.eda_agent import EDAAgent, eda_agent
 from app.agents.insight_agent import InsightAgent, insight_agent
@@ -12,6 +13,8 @@ __all__ = [
     "BaseAgent",
     "ProxyAgent",
     "proxy_agent",
+    "ChatAgent",
+    "chat_agent",
     "SQLAgent",
     "sql_agent",
     "PythonAgent",

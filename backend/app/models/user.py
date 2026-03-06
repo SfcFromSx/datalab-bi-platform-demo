@@ -27,13 +27,7 @@ class User(Base):
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
     )
 
-    memberships = relationship(
-        "WorkspaceMembership",
-        back_populates="user",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
-    audit_events = relationship("AuditEvent", back_populates="actor", lazy="selectin")
+
 
     def __repr__(self) -> str:
         return f"<User {self.email}>"

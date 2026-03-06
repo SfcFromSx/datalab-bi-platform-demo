@@ -10,15 +10,12 @@ import {
   FolderPlus,
   GripVertical,
   Plus,
-  ShieldCheck,
   Trash2,
   Upload,
 } from 'lucide-react';
 import { useNotebookStore } from '../../stores/notebookStore';
 import { listDataSources, uploadCSV } from '../../services/api';
 import type { DataSource, NotebookListItem, Folder } from '../../types';
-import { useEnterpriseStore } from '../../stores/enterpriseStore';
-import AuditPanel from './AuditPanel';
 
 interface Props {
   onSelectNotebook: (id: string | null) => void;
@@ -33,15 +30,8 @@ export default function Sidebar({ onSelectNotebook, activeNotebookId }: Props) {
     createNotebook, deleteNotebook, renameNotebook,
     createFolder, renameFolder, removeFolder, moveToFolder,
   } = useNotebookStore();
-  const {
-    context,
-    workspaceKey,
-    auditEvents,
-    auditLoading,
-    refreshAudit,
-  } = useEnterpriseStore();
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
-  const [activeTab, setActiveTab] = useState<'notebooks' | 'data' | 'audit'>('notebooks');
+  const [activeTab, setActiveTab] = useState<'notebooks' | 'data'>('notebooks');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
@@ -53,22 +43,11 @@ export default function Sidebar({ onSelectNotebook, activeNotebookId }: Props) {
   const editInputRef = useRef<HTMLInputElement>(null);
   const editFolderInputRef = useRef<HTMLInputElement>(null);
 
-  const canViewAudit = ['owner', 'admin'].includes(context?.workspace.role ?? '');
-
   useEffect(() => {
     fetchNotebooks();
     fetchFolders();
     listDataSources().then(setDataSources).catch(() => { });
-    if (canViewAudit) {
-      void refreshAudit();
-    }
-  }, [canViewAudit, fetchFolders, fetchNotebooks, refreshAudit, workspaceKey]);
-
-  useEffect(() => {
-    if (!canViewAudit && activeTab === 'audit') {
-      setActiveTab('notebooks');
-    }
-  }, [activeTab, canViewAudit]);
+  }, [fetchFolders, fetchNotebooks]);
 
   useEffect(() => {
     if (editingId && editInputRef.current) {
@@ -276,46 +255,23 @@ export default function Sidebar({ onSelectNotebook, activeNotebookId }: Props) {
 
   return (
     <div className="w-64 h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col">
-      <div className="m-2 rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-3 shadow-sm dark:border-emerald-900/40 dark:from-emerald-950/40 dark:via-gray-900 dark:to-cyan-950/20">
-        <div className="flex items-start gap-3">
-          <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-300">
-            <ShieldCheck size={16} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:text-emerald-300">
-              {t('enterprise.workspace')}
-            </p>
-            <p className="truncate text-sm font-semibold text-gray-900 dark:text-gray-100">
-              {context?.workspace.name ?? t('common.loading')}
-            </p>
-            <p className="mt-1 max-h-10 overflow-hidden text-xs text-gray-500 dark:text-gray-400">
-              {context?.workspace.description ?? t('enterprise.workspaceDescription')}
-            </p>
-          </div>
-        </div>
-      </div>
-
       <div className="flex border-b border-gray-200 dark:border-gray-700">
         <button
           onClick={() => setActiveTab('notebooks')}
-          className={`flex-1 px-3 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${activeTab === 'notebooks' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          className={`flex-1 px-1 py-2 overflow-hidden text-[10px] font-medium flex flex-col items-center justify-center gap-1 transition-colors ${activeTab === 'notebooks' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/30 dark:bg-blue-900/10' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-700'}`}
+          title={t('sidebar.notebooks')}
         >
-          <BookOpen size={14} /> {t('sidebar.notebooks')}
+          <BookOpen size={16} />
+          <span className="truncate w-full text-center">{t('sidebar.notebooks')}</span>
         </button>
         <button
           onClick={() => setActiveTab('data')}
-          className={`flex-1 px-3 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${activeTab === 'data' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          className={`flex-1 px-1 py-2 overflow-hidden text-[10px] font-medium flex flex-col items-center justify-center gap-1 transition-colors ${activeTab === 'data' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/30 dark:bg-blue-900/10' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-700'}`}
+          title={t('sidebar.dataSources')}
         >
-          <Database size={14} /> {t('sidebar.dataSources')}
+          <Database size={16} />
+          <span className="truncate w-full text-center">{t('sidebar.dataSources')}</span>
         </button>
-        {canViewAudit && (
-          <button
-            onClick={() => setActiveTab('audit')}
-            className={`flex-1 px-3 py-2.5 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${activeTab === 'audit' ? 'text-emerald-600 border-b-2 border-emerald-600' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            <ShieldCheck size={14} /> {t('enterprise.audit')}
-          </button>
-        )}
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
@@ -432,16 +388,6 @@ export default function Sidebar({ onSelectNotebook, activeNotebookId }: Props) {
               ))
             )}
           </div>
-        )}
-
-        {activeTab === 'audit' && canViewAudit && (
-          <AuditPanel
-            auditEvents={auditEvents}
-            auditLoading={auditLoading}
-            onRefresh={() => {
-              void refreshAudit();
-            }}
-          />
         )}
       </div>
     </div>

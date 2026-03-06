@@ -35,13 +35,13 @@ export default function ChatPanel() {
   if (!chatOpen) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 w-96 h-[500px] bg-white dark:bg-gray-900 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 flex flex-col z-50">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-500 to-purple-600 rounded-t-xl">
-        <div className="flex items-center gap-2 text-white">
+    <div className="w-96 flex flex-col bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700 z-10 transition-all duration-300">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-blue-500 to-purple-600 rounded-tl-xl text-white">
+        <div className="flex items-center gap-2">
           <Bot size={18} />
           <span className="font-semibold text-sm">{t('chat.title')}</span>
         </div>
-        <button onClick={toggleChat} className="text-white/80 hover:text-white">
+        <button onClick={toggleChat} className="text-white/80 hover:text-white transition-colors">
           <X size={18} />
         </button>
       </div>

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Cell, CellAIState, CellType, Folder, Notebook, NotebookListItem } from '../types';
+import { wsClient } from '../services/websocket';
 import {
   listNotebooks,
   createNotebook as createNotebookApi,
@@ -78,7 +79,6 @@ export const useNotebookStore = create<NotebookState & NotebookActions>((set, ge
       const notebook = await createNotebookApi(title, description, folderId);
       const listItem: NotebookListItem = {
         id: notebook.id,
-        workspace_id: notebook.workspace_id,
         title: notebook.title,
         description: notebook.description,
         folder_id: notebook.folder_id ?? null,
@@ -218,6 +218,11 @@ export const useNotebookStore = create<NotebookState & NotebookActions>((set, ge
   },
 
   editCellWithAI: async (cellId: string, prompt: string) => {
+    const currentState = get().aiEditStateByCellId[cellId];
+    if (currentState?.status === 'generating') {
+      throw new Error('An AI edit is already in progress for this cell.');
+    }
+
     set({ error: null });
     const originalSource = get().cells.find((cell) => cell.id === cellId)?.source ?? '';
     try {
@@ -448,3 +453,27 @@ export const useNotebookStore = create<NotebookState & NotebookActions>((set, ge
     }
   },
 }));
+
+wsClient.on('cell_update', (message) => {
+  const payload = message.payload as Record<string, any>;
+  if (!payload.cell_id) return;
+  const store = useNotebookStore.getState();
+  store.setCells(
+    store.cells.map((c) => {
+      if (c.id === payload.cell_id) {
+        return {
+          ...c,
+          output: payload.output || { status: payload.status, error: c.output?.error }
+        };
+      }
+      return c;
+    })
+  );
+});
+
+wsClient.on('agent_complete', () => {
+  const store = useNotebookStore.getState();
+  if (store.activeNotebook) {
+    store.loadNotebook(store.activeNotebook.id);
+  }
+});

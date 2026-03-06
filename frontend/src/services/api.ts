@@ -1,87 +1,24 @@
 import axios, { AxiosHeaders } from 'axios';
 import type {
-  AuditEvent,
   AgentQueryResponse,
   Cell,
   CellAgentRuntimeInfo,
   CellExecuteResult,
   CellType,
   DataSource,
-  EnterpriseContext,
   Folder,
   Notebook,
   NotebookListItem,
 } from '../types';
-
-const WORKSPACE_STORAGE_KEY = 'datalab.workspaceKey';
-const USER_EMAIL_STORAGE_KEY = 'datalab.userEmail';
 
 const api = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
 });
 
-function readStorageValue(key: string) {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-  return window.localStorage.getItem(key);
-}
-
-export function getStoredWorkspaceKey() {
-  return readStorageValue(WORKSPACE_STORAGE_KEY);
-}
-
-export function setStoredWorkspaceKey(workspaceKey: string | null) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  if (workspaceKey) {
-    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceKey);
-  } else {
-    window.localStorage.removeItem(WORKSPACE_STORAGE_KEY);
-  }
-}
-
-export function getStoredUserEmail() {
-  return readStorageValue(USER_EMAIL_STORAGE_KEY);
-}
-
-export function setStoredUserEmail(userEmail: string | null) {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  if (userEmail) {
-    window.localStorage.setItem(USER_EMAIL_STORAGE_KEY, userEmail);
-  } else {
-    window.localStorage.removeItem(USER_EMAIL_STORAGE_KEY);
-  }
-}
-
-export function getEnterpriseHeaders() {
-  const workspaceKey = getStoredWorkspaceKey();
-  const userEmail = getStoredUserEmail();
-
-  return {
-    ...(workspaceKey ? { 'X-DataLab-Workspace': workspaceKey } : {}),
-    ...(userEmail ? { 'X-DataLab-User-Email': userEmail } : {}),
-  };
-}
-
 export function getApiBaseUrl() {
   return typeof api.defaults.baseURL === 'string' ? api.defaults.baseURL : '/api';
 }
-
-api.interceptors.request.use((config) => {
-  const headers = AxiosHeaders.from(config.headers);
-  Object.entries(getEnterpriseHeaders()).forEach(([key, value]) => {
-    if (value) {
-      headers.set(key, value);
-    }
-  });
-  config.headers = headers;
-  return config;
-});
 
 export const listNotebooks = () =>
   api.get<NotebookListItem[]>('/notebooks').then((r) => r.data);
@@ -158,7 +95,6 @@ export const editCellWithAIStream = async (
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...getEnterpriseHeaders(),
     },
     body: JSON.stringify({ prompt }),
   });
@@ -255,11 +191,5 @@ export const searchKnowledge = (query: string, datasourceId?: string) =>
     .then((r) => r.data);
 
 export const healthCheck = () => api.get('/health').then((r) => r.data);
-
-export const getEnterpriseContext = () =>
-  api.get<EnterpriseContext>('/enterprise/context').then((r) => r.data);
-
-export const listAuditEvents = (limit = 50) =>
-  api.get<AuditEvent[]>('/enterprise/audit-events', { params: { limit } }).then((r) => r.data);
 
 export default api;

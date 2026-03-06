@@ -4,11 +4,11 @@ interface Props {
   runtime: CellAgentRuntimeInfo;
 }
 
-export default function CellAgentRuntimeCard({ runtime }: Props) {
+export default function CellRuntimeCard({ runtime }: Props) {
   return (
     <details className="border-t border-gray-100 bg-slate-50/80 px-4 py-3 text-xs text-slate-700 dark:border-gray-800 dark:bg-slate-950/30 dark:text-slate-200">
       <summary className="cursor-pointer font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-        Cell Agent Runtime
+        Cell Runtime Details
       </summary>
       <div className="mt-3 space-y-2">
         <p>
