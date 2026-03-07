@@ -37,6 +37,7 @@ class LLMClient:
             kwargs["response_format"] = response_format
         if tools:
             kwargs["tools"] = tools
+        kwargs["timeout"] = 30.0
 
         try:
             response = await litellm.acompletion(**kwargs)
@@ -79,6 +80,7 @@ class LLMClient:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 stream=True,
+                timeout=30.0,
             )
             async for chunk in response:
                 delta = chunk.choices[0].delta.content

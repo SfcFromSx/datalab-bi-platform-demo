@@ -27,19 +27,20 @@ class NotebookRuntimeBundle:
 def build_runtime_bundle(cells: Iterable[Any]) -> NotebookRuntimeBundle:
     ordered_cells = sorted(
         [_to_cell_dict(cell) for cell in cells],
-        key=lambda item: item["position"],
+        key=lambda item: (item["position"], str(item["id"])),
     )
     dag = CellDependencyDAG()
     dag.build(ordered_cells)
-    
+
     for cell in ordered_cells:
         node = dag.get_node(cell["id"])
-        if node:
-            cell["variables_defined"] = list(node.variables_defined)
-            cell["variables_referenced"] = list(node.variables_referenced)
-            cell["ancestors"] = list(node.ancestors)
-            cell["descendants"] = list(node.descendants)
-            
+        if not node:
+            continue
+        cell["variables_defined"] = sorted(node.variables_defined)
+        cell["variables_referenced"] = sorted(node.variables_referenced)
+        cell["ancestors"] = sorted(node.ancestors)
+        cell["descendants"] = sorted(node.descendants)
+
     cells_by_id = {cell["id"]: cell for cell in ordered_cells}
     retriever = ContextRetriever(dag)
     return NotebookRuntimeBundle(
@@ -84,6 +85,7 @@ def build_query_context(
         "cells": relevant_cells,
         "notebook_context": format_cells_for_llm(relevant_cells),
         "table_context": json.dumps(build_table_catalog(relevant_cells), default=str, indent=2),
+        "value_context": json.dumps(build_value_catalog(relevant_cells), default=str, indent=2),
     }
 
 
@@ -91,14 +93,7 @@ def build_python_bootstrap(
     bundle: NotebookRuntimeBundle,
     cell_id: str,
 ) -> tuple[str, dict[str, dict[str, Any]]]:
-    ancestor_ids = bundle.dag.get_ancestors(cell_id)
-    bootstrap_cells = [
-        bundle.cells_by_id[ancestor_id]
-        for ancestor_id in ancestor_ids
-        if ancestor_id in bundle.cells_by_id
-    ]
-    bootstrap_cells.sort(key=lambda cell: cell["position"])
-
+    bootstrap_cells = _ordered_ancestor_cells(bundle, cell_id)
     bootstrap_code_parts: list[str] = []
     bootstrap_tables = build_table_catalog(bootstrap_cells)
 
@@ -113,14 +108,7 @@ def build_sql_bootstrap_tables(
     bundle: NotebookRuntimeBundle,
     cell_id: str,
 ) -> dict[str, dict[str, Any]]:
-    ancestor_ids = bundle.dag.get_ancestors(cell_id)
-    bootstrap_cells = [
-        bundle.cells_by_id[ancestor_id]
-        for ancestor_id in ancestor_ids
-        if ancestor_id in bundle.cells_by_id
-    ]
-    bootstrap_cells.sort(key=lambda cell: cell["position"])
-    return build_table_catalog(bootstrap_cells)
+    return build_table_catalog(_ordered_ancestor_cells(bundle, cell_id))
 
 
 def build_table_catalog(cells: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -132,6 +120,13 @@ def build_table_catalog(cells: Iterable[dict[str, Any]]) -> dict[str, dict[str, 
         for variable_name in extract_variable_names(cell):
             tables[variable_name] = table
     return tables
+
+
+def build_value_catalog(cells: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    values: dict[str, Any] = {}
+    for cell in cells:
+        values.update(extract_output_values(cell))
+    return values
 
 
 def extract_variable_names(cell: dict[str, Any]) -> list[str]:
@@ -179,6 +174,32 @@ def extract_output_table(cell: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def extract_output_values(cell: dict[str, Any]) -> dict[str, Any]:
+    output = cell.get("output")
+    if not isinstance(output, dict):
+        return {}
+
+    exported = output.get("exports")
+    if not isinstance(exported, dict):
+        return {}
+
+    cell_id = cell.get("id") or cell.get("cell_id")
+    cell_type = cell.get("cell_type", "")
+    source = cell.get("source", "")
+    if not cell_id or cell_type != "python":
+        return exported
+
+    analyzed = variable_tracker.analyze_cell(cell_id, cell_type, source)
+    if not analyzed.defined:
+        return exported
+
+    return {
+        variable_name: exported[variable_name]
+        for variable_name in sorted(analyzed.defined)
+        if variable_name in exported
+    }
+
+
 def format_cells_for_llm(cells: Iterable[dict[str, Any]]) -> str:
     parts: list[str] = []
     for cell in cells:
@@ -207,19 +228,34 @@ def summarize_output(output: Any) -> str:
         return ""
     if output.get("error"):
         return str(output["error"])
+    parts: list[str] = []
     if output.get("data") and isinstance(output["data"], dict):
         data = output["data"]
-        return (
+        parts.append(
             f"DataFrame {data.get('variable', 'result')} "
             f"with columns {data.get('columns', [])} and {len(data.get('rows', []))} rows"
         )
-    if output.get("columns"):
-        return f"Columns {output['columns']} with {len(output.get('rows', []))} rows"
+    elif output.get("columns"):
+        parts.append(
+            f"Columns {output['columns']} with {len(output.get('rows', []))} rows"
+        )
     if output.get("stdout"):
-        return str(output["stdout"])[:400]
+        parts.append(str(output["stdout"])[:400])
+    if output.get("exports"):
+        exported = output["exports"]
+        if isinstance(exported, dict) and exported:
+            parts.append(f"Values {sorted(exported)}")
     if output.get("html"):
-        return "Rendered markdown/html output"
-    return ""
+        parts.append("Rendered markdown/html output")
+    return " | ".join(parts)
+
+
+def _ordered_ancestor_cells(
+    bundle: NotebookRuntimeBundle,
+    cell_id: str,
+) -> list[dict[str, Any]]:
+    ancestor_ids = bundle.dag.get_ancestors(cell_id)
+    return [cell for cell in bundle.ordered_cells if cell["id"] in ancestor_ids]
 
 
 def _to_cell_dict(cell: Any) -> dict[str, Any]:

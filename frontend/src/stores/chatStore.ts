@@ -47,9 +47,6 @@ export const useChatStore = create<ChatState & ChatActions>((set, get) => ({
       messages: s.messages.map((m) => (m.id === id ? { ...m, ...updates } : m)),
     })),
 
-  addMessage: (message: ChatMessage) =>
-    set((s) => ({ messages: [...s.messages, message] })),
-
   clearHistory: () => set({ messages: [] }),
 
   setDatasource: (id: string | null) => set({ activeDatasourceId: id }),
@@ -73,6 +70,10 @@ wsClient.on('agent_progress', (message) => {
       content: payload.message || 'Processing...',
       timestamp: Date.now(),
     });
+  }
+
+  if (payload.status === 'error') {
+    useChatStore.setState({ isLoading: false });
   }
 });
 

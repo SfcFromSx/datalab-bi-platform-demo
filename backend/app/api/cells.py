@@ -405,13 +405,14 @@ def _normalize_ai_edit_output(
             ast.parse(cleaned)
             return cleaned
         except SyntaxError:
-            # If AI returned invalid Python, we might have accidentally captured commentary
-            # Let's try to be conservative and not overwrite with garbage
-            return cleaned 
+            # Avoid overwriting the cell with invalid Python.
+            return current_source
 
     if cell_type == CellType.CHART:
         try:
             parsed = json.loads(cleaned)
+            if not isinstance(parsed, dict):
+                return current_source
             current_spec = _load_json_object(current_source)
             if (
                 isinstance(current_spec, dict)
@@ -422,7 +423,7 @@ def _normalize_ai_edit_output(
                 parsed["data_source"] = current_spec["data_source"]
             return json.dumps(parsed, indent=2)
         except json.JSONDecodeError:
-            return cleaned
+            return current_source
 
     return cleaned
 

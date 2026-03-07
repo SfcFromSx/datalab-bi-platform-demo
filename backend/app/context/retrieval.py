@@ -48,28 +48,7 @@ class ContextRetriever:
         ancestor_ids.add(cell_id)
 
         allowed_types = TASK_CELL_TYPES.get(task_type, TASK_CELL_TYPES["general"])
-
-        relevant_cells = []
-        for cid in ancestor_ids:
-            node = self.dag.get_node(cid)
-            if node and node.cell_type in allowed_types:
-                cell_info: dict[str, Any] = {
-                    "cell_id": cid,
-                    "cell_type": node.cell_type,
-                    "variables_defined": list(node.variables_defined),
-                }
-                if cells_data and cid in cells_data:
-                    cell_info["source"] = cells_data[cid].get("source", "")
-                    cell_info["output"] = cells_data[cid].get("output")
-                relevant_cells.append(cell_info)
-
-        if self.buffer:
-            for cell_info in relevant_cells:
-                info_units = self._get_cell_info_units(cell_info["cell_id"])
-                if info_units:
-                    cell_info["info_units"] = [u.to_dict() for u in info_units]
-
-        return relevant_cells
+        return self._collect_cells(ancestor_ids, allowed_types, cells_data)
 
     def retrieve_notebook_context(
         self,
@@ -79,13 +58,7 @@ class ContextRetriever:
     ) -> list[dict[str, Any]]:
         """Notebook-level query: find data source cell and get descendants."""
         if data_variable:
-            source_cell_id = None
-            for cell_id in self.dag._nodes:
-                node = self.dag.get_node(cell_id)
-                if node and data_variable in node.variables_defined:
-                    source_cell_id = cell_id
-                    break
-
+            source_cell_id = self._find_source_cell_id(data_variable)
             if source_cell_id:
                 descendant_ids = self.dag.get_descendants(source_cell_id)
                 descendant_ids.add(source_cell_id)
@@ -95,22 +68,7 @@ class ContextRetriever:
             descendant_ids = set(self.dag._nodes.keys())
 
         allowed_types = TASK_CELL_TYPES.get(task_type, TASK_CELL_TYPES["general"])
-
-        relevant_cells = []
-        for cid in descendant_ids:
-            node = self.dag.get_node(cid)
-            if node and node.cell_type in allowed_types:
-                cell_info: dict[str, Any] = {
-                    "cell_id": cid,
-                    "cell_type": node.cell_type,
-                    "variables_defined": list(node.variables_defined),
-                }
-                if cells_data and cid in cells_data:
-                    cell_info["source"] = cells_data[cid].get("source", "")
-                    cell_info["output"] = cells_data[cid].get("output")
-                relevant_cells.append(cell_info)
-
-        return relevant_cells
+        return self._collect_cells(descendant_ids, allowed_types, cells_data)
 
     def retrieve_query_context(
         self,
@@ -154,36 +112,31 @@ class ContextRetriever:
             scored.append((score, cell_info))
 
         if not scored:
-            fallback_ids = [
+            fallback_ids = {
                 cell_id
                 for cell_id, node in self.dag._nodes.items()
                 if node.cell_type in allowed_types
-            ]
-            fallback_ids.sort(
-                key=lambda cell_id: cells_data.get(cell_id, {}).get("position", 0)
-                if cells_data
-                else 0
-            )
+            }
             scored = [
                 (0.0, self._build_cell_info(cell_id, self.dag.get_node(cell_id), cells_data))
-                for cell_id in fallback_ids[-limit:]
+                for cell_id in self._ordered_cell_ids(fallback_ids, cells_data)[-limit:]
                 if self.dag.get_node(cell_id)
             ]
 
         scored.sort(
             key=lambda item: (
                 -item[0],
-                cells_data.get(item[1]["cell_id"], {}).get("position", 0)
-                if cells_data
-                else 0,
+                self._cell_position(item[1]["cell_id"], cells_data),
+                item[1]["cell_id"],
             )
         )
 
         results = [item[1] for item in scored[:limit]]
         results.sort(
-            key=lambda item: cells_data.get(item["cell_id"], {}).get("position", 0)
-            if cells_data
-            else 0
+            key=lambda item: (
+                self._cell_position(item["cell_id"], cells_data),
+                item["cell_id"],
+            )
         )
         return results
 
@@ -196,8 +149,8 @@ class ContextRetriever:
         cell_info: dict[str, Any] = {
             "cell_id": cell_id,
             "cell_type": node.cell_type,
-            "variables_defined": list(node.variables_defined),
-            "variables_referenced": list(node.variables_referenced),
+            "variables_defined": sorted(node.variables_defined),
+            "variables_referenced": sorted(node.variables_referenced),
         }
         if cells_data and cell_id in cells_data:
             cell_info["source"] = cells_data[cell_id].get("source", "")
@@ -249,3 +202,42 @@ class ContextRetriever:
             return []
         all_units = self.buffer.retrieve_all()
         return [u for u in all_units if u.cell_id == cell_id]
+
+    def _collect_cells(
+        self,
+        cell_ids: set[str],
+        allowed_types: set[str],
+        cells_data: Optional[dict[str, dict]] = None,
+    ) -> list[dict[str, Any]]:
+        relevant_cells: list[dict[str, Any]] = []
+        for cell_id in self._ordered_cell_ids(cell_ids, cells_data):
+            node = self.dag.get_node(cell_id)
+            if node and node.cell_type in allowed_types:
+                relevant_cells.append(self._build_cell_info(cell_id, node, cells_data))
+        return relevant_cells
+
+    def _ordered_cell_ids(
+        self,
+        cell_ids: set[str],
+        cells_data: Optional[dict[str, dict]] = None,
+    ) -> list[str]:
+        return sorted(
+            cell_ids,
+            key=lambda cell_id: (self._cell_position(cell_id, cells_data), cell_id),
+        )
+
+    def _cell_position(
+        self,
+        cell_id: str,
+        cells_data: Optional[dict[str, dict]] = None,
+    ) -> int:
+        if cells_data and cell_id in cells_data:
+            return cells_data[cell_id].get("position", 0)
+        node = self.dag.get_node(cell_id)
+        return node.position if node else 0
+
+    def _find_source_cell_id(self, data_variable: str) -> str | None:
+        for cell_id, node in self.dag._nodes.items():
+            if data_variable in node.variables_defined:
+                return cell_id
+        return None

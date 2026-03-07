@@ -25,7 +25,10 @@ DSL_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "column": {"type": "string"},
-                    "aggregation": {"type": "string", "enum": ["SUM", "COUNT", "AVG", "MIN", "MAX", "NONE"]},
+                    "aggregation": {
+                        "type": "string",
+                        "enum": ["SUM", "COUNT", "AVG", "MIN", "MAX", "NONE"],
+                    },
                     "alias": {"type": "string"},
                 },
                 "required": ["column"],

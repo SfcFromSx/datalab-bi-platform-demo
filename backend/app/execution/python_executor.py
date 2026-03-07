@@ -41,8 +41,32 @@ _old_stderr = sys.stderr
 
 _result = {{"status": "success", "stdout": "", "stderr": "", "data": None, "error": None}}
 _bootstrap_tables = {bootstrap_tables}
+_bootstrap_values = {bootstrap_values}
 _bootstrap_code = {bootstrap_code}
 _user_code = {code}
+
+def _serialize_value(_value):
+    try:
+        return json.loads(json.dumps(_value, default=str))
+    except TypeError:
+        return None
+
+def _collect_exports(_globals):
+    _exports = {{}}
+    for _name, _val in _globals.items():
+        if _name.startswith("_") or _name in {{"pd", "__builtins__"}}:
+            continue
+        if isinstance(_val, pd.DataFrame) or callable(_val):
+            continue
+        if type(_val).__name__ == "module":
+            continue
+        _serialized = _serialize_value(_val)
+        if _serialized is None:
+            continue
+        if len(json.dumps(_serialized, default=str)) > 20000:
+            continue
+        _exports[_name] = _serialized
+    return _exports
 
 try:
     _globals = {{"pd": pd, "__builtins__": __builtins__}}
@@ -51,6 +75,8 @@ try:
             _table.get("rows", []),
             columns=_table.get("columns", []),
         )
+    for _name, _value in _bootstrap_values.items():
+        _globals[_name] = _value
 
     if _bootstrap_code.strip():
         _bootstrap_stdout = io.StringIO()
@@ -60,6 +86,7 @@ try:
         exec(_bootstrap_code, _globals)
 
     _known_keys = set(_globals.keys())
+    _baseline_exports = _collect_exports(_globals)
 
     sys.stdout = _stdout_capture
     sys.stderr = _stderr_capture
@@ -80,6 +107,13 @@ try:
             "shape": list(_frame.shape),
             "variable": _frame_name,
         }}
+
+    _current_exports = _collect_exports(_globals)
+    _result["exports"] = {{
+        _name: _value
+        for _name, _value in _current_exports.items()
+        if _baseline_exports.get(_name) != _value
+    }}
 
 except Exception as _e:
     _result["status"] = "error"
@@ -107,11 +141,13 @@ class PythonExecutor:
         code: str,
         bootstrap_code: str = "",
         bootstrap_tables: dict[str, dict[str, Any]] | None = None,
+        bootstrap_values: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         wrapper = WRAPPER_TEMPLATE.format(
             code=json.dumps(code),
             bootstrap_code=json.dumps(bootstrap_code),
             bootstrap_tables=json.dumps(bootstrap_tables or {}),
+            bootstrap_values=json.dumps(bootstrap_values or {}, default=str),
         )
 
         with tempfile.NamedTemporaryFile(
@@ -134,6 +170,7 @@ class PythonExecutor:
                 )
             except asyncio.TimeoutError:
                 process.kill()
+                await process.wait()
                 return {
                     "status": "error",
                     "stdout": "",

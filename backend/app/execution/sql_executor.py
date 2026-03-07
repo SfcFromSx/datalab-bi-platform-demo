@@ -142,12 +142,25 @@ class SQLExecutor:
         result = conn.execute(query)
         if result.description:
             columns = [desc[0] for desc in result.description]
-            rows = result.fetchall()
+            raw_rows = result.fetchall()
+            
+            from datetime import datetime, date, time
+            
+            def serialize(val: Any) -> Any:
+                if isinstance(val, (datetime, date, time)):
+                    return val.isoformat()
+                return val
+                
+            json_safe_rows = [
+                [serialize(v) for v in row]
+                for row in raw_rows[:500]
+            ]
+            
             return {
                 "status": "success",
                 "columns": columns,
-                "rows": [list(row) for row in rows[:500]],
-                "row_count": len(rows),
+                "rows": json_safe_rows,
+                "row_count": len(raw_rows),
                 "error": None,
             }
         return {

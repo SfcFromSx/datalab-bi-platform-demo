@@ -83,7 +83,7 @@ class VariableTracker:
                 all_names.add(node.id)
 
         if isinstance(__builtins__, dict):
-            builtins_set = set(dir(__builtins__))
+            builtins_set = set(__builtins__)
         else:
             builtins_set = set(dir(__builtins__))
         result.referenced = all_names - result.defined - builtins_set

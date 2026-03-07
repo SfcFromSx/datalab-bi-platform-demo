@@ -17,6 +17,8 @@ from app.notebook_runtime import (
     NotebookRuntimeBundle,
     build_runtime_bundle,
     build_table_catalog,
+    build_value_catalog,
+    extract_output_values,
     summarize_output,
 )
 
@@ -113,10 +115,15 @@ class CellRuntime:
 
             dependencies = plan.bundle.dag.get_direct_dependencies(cell_id)
             ancestors_set = set(plan.bundle.dag.get_ancestors(cell_id))
-            ancestors = [candidate for candidate in plan.plan if candidate != cell_id and candidate in ancestors_set]
+            ancestors = [
+                candidate
+                for candidate in plan.plan
+                if candidate != cell_id and candidate in ancestors_set
+            ]
             inbox_messages = self._read_inbox(paths.inbox_dir)
             tables = self._load_tables(plan, cell_id)
-            bootstrap_code = self._build_python_bootstrap(plan, cell_id)
+            values = self._load_values(plan, cell_id)
+            bootstrap_code = self._build_python_bootstrap(plan, cell_id, tables, values)
             fingerprint = self._fingerprint(plan, cell_id)
 
             task_payload = {
@@ -134,7 +141,8 @@ class CellRuntime:
                 "ancestors": ancestors,
                 "inbox_messages": inbox_messages,
                 "table_catalog": tables,
-                "bootstrap_sources": self._bootstrap_sources(plan, cell_id),
+                "value_catalog": values,
+                "bootstrap_sources": self._bootstrap_sources(plan, cell_id, tables, values),
             }
 
             self._write_json(paths.task_file, task_payload)
@@ -148,6 +156,7 @@ class CellRuntime:
             raw_output = await self._execute_cell(
                 cell,
                 tables=tables,
+                values=values,
                 bootstrap_code=bootstrap_code,
                 datasource_ids=datasource_ids,
                 datasources=datasources or [],
@@ -287,10 +296,15 @@ class CellRuntime:
         return prepared
 
     def _paths_for_cell(self, cell: dict[str, Any]) -> CellPaths:
+        workspace_name = (
+            f"{int(cell.get('position', 0)):03d}-"
+            f"{cell.get('cell_type', 'cell')}-"
+            f"{str(cell.get('id', 'cell'))[:8]}"
+        )
         workspace_dir = (
             self.root_dir
             / self._safe_segment(cell.get("notebook_id") or "notebook")
-            / f"{int(cell.get('position', 0)):03d}-{cell.get('cell_type', 'cell')}-{str(cell.get('id', 'cell'))[:8]}"
+            / workspace_name
         )
         extension = FILE_EXTENSIONS.get(cell.get("cell_type", ""), ".txt")
         return CellPaths(
@@ -323,6 +337,16 @@ class CellRuntime:
         self._write_text(paths.source_file, cell.get("source", ""))
 
     def _load_tables(self, plan: CellRuntimePlan, cell_id: str) -> dict[str, dict[str, Any]]:
+        return build_table_catalog(self._load_artifact_cells(plan, cell_id))
+
+    def _load_values(self, plan: CellRuntimePlan, cell_id: str) -> dict[str, Any]:
+        return build_value_catalog(self._load_artifact_cells(plan, cell_id))
+
+    def _load_artifact_cells(
+        self,
+        plan: CellRuntimePlan,
+        cell_id: str,
+    ) -> list[dict[str, Any]]:
         cells: list[dict[str, Any]] = []
         for ancestor_id in plan.bundle.dag.get_execution_plan(cell_id):
             if ancestor_id == cell_id:
@@ -341,35 +365,83 @@ class CellRuntime:
                     "output": output,
                 }
             )
-        return build_table_catalog(cells)
+        return cells
 
-    def _build_python_bootstrap(self, plan: CellRuntimePlan, cell_id: str) -> str:
+    def _build_python_bootstrap(
+        self,
+        plan: CellRuntimePlan,
+        cell_id: str,
+        tables: dict[str, dict[str, Any]],
+        values: dict[str, Any],
+    ) -> str:
         code_parts: list[str] = []
-        for ancestor_id in plan.bundle.dag.get_execution_plan(cell_id):
-            if ancestor_id == cell_id:
-                continue
-            cell = plan.bundle.cells_by_id[ancestor_id]
-            if cell.get("cell_type") != "python":
-                continue
+        for ancestor_id in self._select_python_bootstrap_cell_ids(plan, cell_id, tables, values):
             source_file = plan.paths_by_id[ancestor_id].source_file
             if source_file.exists():
                 code_parts.append(source_file.read_text(encoding="utf-8"))
         return "\n\n".join(part for part in code_parts if part.strip())
 
-    def _bootstrap_sources(self, plan: CellRuntimePlan, cell_id: str) -> list[str]:
-        sources: list[str] = []
-        for ancestor_id in plan.bundle.dag.get_execution_plan(cell_id):
+    def _select_python_bootstrap_cell_ids(
+        self,
+        plan: CellRuntimePlan,
+        cell_id: str,
+        tables: dict[str, dict[str, Any]],
+        values: dict[str, Any],
+    ) -> list[str]:
+        target_node = plan.bundle.dag.get_node(cell_id)
+        if not target_node:
+            return []
+
+        available_names = set(tables) | set(values)
+        required_names = {
+            name
+            for name in target_node.variables_referenced
+            if name not in available_names
+        }
+        if not required_names:
+            return []
+
+        selected_ids: list[str] = []
+        for ancestor_id in reversed(plan.bundle.dag.get_execution_plan(cell_id)):
             if ancestor_id == cell_id:
                 continue
             cell = plan.bundle.cells_by_id[ancestor_id]
-            if cell.get("cell_type") == "python":
-                sources.append(str(plan.paths_by_id[ancestor_id].source_file))
-        return sources
+            if cell.get("cell_type") != "python":
+                continue
+            node = plan.bundle.dag.get_node(ancestor_id)
+            if not node or not (node.variables_defined & required_names):
+                continue
+            selected_ids.append(ancestor_id)
+            available_names |= node.variables_defined
+            required_names |= {
+                name for name in node.variables_referenced if name not in available_names
+            }
+
+        selected_ids.reverse()
+        return selected_ids
+
+    def _bootstrap_sources(
+        self,
+        plan: CellRuntimePlan,
+        cell_id: str,
+        tables: dict[str, dict[str, Any]],
+        values: dict[str, Any],
+    ) -> list[str]:
+        return [
+            str(plan.paths_by_id[ancestor_id].source_file)
+            for ancestor_id in self._select_python_bootstrap_cell_ids(
+                plan,
+                cell_id,
+                tables,
+                values,
+            )
+        ]
 
     async def _execute_cell(
         self,
         cell: dict[str, Any],
         tables: dict[str, dict[str, Any]],
+        values: dict[str, Any],
         bootstrap_code: str,
         datasource_ids: Sequence[str],
         datasources: Sequence[DataSource],
@@ -382,6 +454,7 @@ class CellRuntime:
                 source,
                 bootstrap_code=bootstrap_code,
                 bootstrap_tables=tables,
+                bootstrap_values=values,
             )
 
         if cell_type == CellType.SQL:
@@ -397,9 +470,9 @@ class CellRuntime:
             return chart_result
 
         if cell_type == CellType.MARKDOWN:
-            resolved_markdown = self._render_markdown_placeholders(source, tables)
+            resolved_markdown = self._render_markdown_placeholders(source, tables, values)
             markdown_output = await execution_sandbox.execute(cell_type, resolved_markdown)
-            markdown_output["bindings"] = sorted(tables)
+            markdown_output["bindings"] = sorted(set(tables) | set(values))
             return markdown_output
 
         return await execution_sandbox.execute(cell_type, source)
@@ -473,16 +546,18 @@ class CellRuntime:
     ) -> dict[str, Any]:
         cell = plan.bundle.cells_by_id[cell_id]
         tables = build_table_catalog([{**cell, "output": output}])
+        values = extract_output_values({**cell, "output": output})
         return {
             "message_id": uuid.uuid4().hex,
             "from_cell_id": cell_id,
             "cell_type": cell["cell_type"],
             "fingerprint": fingerprint,
-            "variables_defined": sorted(tables),
+            "variables_defined": sorted(set(tables) | set(values)),
             "summary": summarize_output(output),
             "source_file": str(plan.paths_by_id[cell_id].source_file),
             "output_file": str(plan.paths_by_id[cell_id].output_file),
             "tables": tables,
+            "values": values,
         }
 
     def _read_inbox(self, inbox_dir: Path) -> list[dict[str, Any]]:
@@ -541,20 +616,36 @@ class CellRuntime:
     def _render_markdown_placeholders(
         source: str,
         tables: dict[str, dict[str, Any]],
+        values: dict[str, Any] | None = None,
     ) -> str:
+        scalar_values = values or {}
+
         def replace(match: re.Match[str]) -> str:
             expr = match.group(1).strip()
             variable_name, _, attribute = expr.partition(".")
             table = tables.get(variable_name)
-            if not table:
+            if table:
+                if attribute == "row_count":
+                    return str(len(table.get("rows", [])))
+                if attribute == "columns":
+                    return ", ".join(str(column) for column in table.get("columns", []))
+                if attribute == "preview":
+                    return json.dumps(table.get("rows", [])[:3], default=str)
+                if attribute:
+                    return match.group(0)
+                return json.dumps(table, default=str)
+
+            if variable_name not in scalar_values:
                 return match.group(0)
-            if attribute == "row_count":
-                return str(len(table.get("rows", [])))
-            if attribute == "columns":
-                return ", ".join(str(column) for column in table.get("columns", []))
-            if attribute == "preview":
-                return json.dumps(table.get("rows", [])[:3], default=str)
-            return match.group(0)
+
+            value = scalar_values[variable_name]
+            if not attribute or attribute == "value":
+                return CellRuntime._stringify_markdown_value(value)
+
+            resolved_value = CellRuntime._resolve_value_attribute(value, attribute)
+            if resolved_value is _MISSING:
+                return match.group(0)
+            return CellRuntime._stringify_markdown_value(resolved_value)
 
         return re.sub(r"{{\s*([^}]+)\s*}}", replace, source)
 
@@ -577,6 +668,24 @@ class CellRuntime:
         return cleaned or "workspace"
 
     @staticmethod
+    def _resolve_value_attribute(value: Any, attribute: str) -> Any:
+        current = value
+        for part in attribute.split("."):
+            if isinstance(current, dict) and part in current:
+                current = current[part]
+                continue
+            return _MISSING
+        return current
+
+    @staticmethod
+    def _stringify_markdown_value(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (int, float, bool)) or value is None:
+            return str(value)
+        return json.dumps(value, default=str)
+
+    @staticmethod
     def _write_json(path: Path, payload: Any) -> None:
         path.write_text(
             json.dumps(payload, indent=2, sort_keys=True, default=str),
@@ -595,3 +704,6 @@ class CellRuntime:
 
 
 cell_runtime = CellRuntime()
+
+
+_MISSING = object()
