@@ -37,6 +37,7 @@ class KnowledgeRetriever:
         query: str,
         datasource_id: Optional[str] = None,
         top_k: int = 10,
+        workspace_id: Optional[str] = None,
     ) -> list[tuple[KnowledgeNode, float]]:
         coarse_nodes = await self._coarse_retrieval(
             session,

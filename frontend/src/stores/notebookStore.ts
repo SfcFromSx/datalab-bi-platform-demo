@@ -51,6 +51,9 @@ interface NotebookActions {
   setCells: (cells: Cell[]) => void;
 }
 
+const _debouncedSaveTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+const DEBOUNCE_MS = 400;
+
 export const useNotebookStore = create<NotebookState & NotebookActions>((set, get) => ({
   notebooks: [],
   folders: [],
@@ -202,19 +205,26 @@ export const useNotebookStore = create<NotebookState & NotebookActions>((set, ge
   },
 
   updateCellSource: async (cellId: string, source: string) => {
-    set({ loading: true, error: null });
-    try {
-      const cell = await updateCellApi(cellId, source);
-      set((s) => ({
-        cells: s.cells.map((c) => (c.id === cellId ? cell : c)),
-        loading: false,
-      }));
-    } catch (e) {
-      set({
-        loading: false,
-        error: e instanceof Error ? e.message : 'Failed to update cell',
-      });
+    set((s) => ({
+      cells: s.cells.map((c) => (c.id === cellId ? { ...c, source } : c)),
+    }));
+
+    if (_debouncedSaveTimers[cellId]) {
+      clearTimeout(_debouncedSaveTimers[cellId]);
     }
+    _debouncedSaveTimers[cellId] = setTimeout(async () => {
+      delete _debouncedSaveTimers[cellId];
+      try {
+        const cell = await updateCellApi(cellId, source);
+        set((s) => ({
+          cells: s.cells.map((c) => (c.id === cellId ? cell : c)),
+        }));
+      } catch (e) {
+        set({
+          error: e instanceof Error ? e.message : 'Failed to update cell',
+        });
+      }
+    }, DEBOUNCE_MS);
   },
 
   editCellWithAI: async (cellId: string, prompt: string) => {

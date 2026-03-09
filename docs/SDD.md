@@ -1,8 +1,9 @@
 # DataLab - Software Design Document (SDD)
 
-**Version**: 1.1  
-**Date**: 2026-03-06  
-**Based on**: arXiv:2412.02205v3 - "DataLab: A Unified Platform for LLM-Powered Business Intelligence"
+**Version**: 2.0  
+**Date**: 2026-03-09  
+**Based on**: arXiv:2412.02205v3 - "DataLab: A Unified Platform for LLM-Powered Business Intelligence"  
+**Note**: This version reflects the actual implemented state of the codebase. Planned but unimplemented features are explicitly marked. See `TODO.md` for the full gap analysis.
 
 ---
 
@@ -44,7 +45,7 @@ This document covers the complete software design for:
 | **Extensibility** | DAG-based agent workflows, plugin APIs for data connectors |
 | **Efficiency** | Cell-based context management reduces token costs by ~60% |
 | **Collaboration** | Multi-role notebook with real-time updates |
-| **Governance** | Workspace isolation, RBAC, audit logging, and request tracing for enterprise operation |
+| **Governance** | Workspace isolation, RBAC, audit logging (planned, not yet implemented) |
 
 ### 1.4 Technology Stack
 
@@ -53,13 +54,13 @@ This document covers the complete software design for:
 | Backend Runtime | Python 3.11+ / FastAPI | Async, AI/ML ecosystem, type safety |
 | Frontend | React 18 + TypeScript + Vite | Complex UI, strong typing, fast builds |
 | Database | SQLite (dev) / PostgreSQL (prod) | SQLAlchemy ORM, Alembic migrations |
-| Vector Store | ChromaDB | Embedded, Python-native, no infra overhead |
+| Vector Store | ChromaDB | Embedded, Python-native (dependency listed; not yet integrated) |
 | LLM Gateway | LiteLLM | Unified API: OpenAI, Anthropic, Ollama, Azure |
 | SQL Engine | DuckDB | In-process OLAP, zero config, Pandas interop |
-| Python Execution | Subprocess sandbox | Secure code execution with timeout/resource limits |
-| Charts | ECharts + Vega-Lite | Rich i18n + grammar-based visualization |
+| Python Execution | Subprocess sandbox | Code execution with timeout (resource limits not enforced) |
+| Charts | ECharts | Rich interactive visualization |
 | Code Editor | Monaco Editor | VS Code engine, syntax highlighting, autocomplete |
-| Styling | Tailwind CSS + shadcn/ui | Utility-first, accessible component library |
+| Styling | Tailwind CSS | Utility-first styling |
 | Real-time | WebSocket (FastAPI) | Streaming execution results, agent progress |
 | i18n | react-i18next | Bilingual EN/ZH support |
 
@@ -120,26 +121,28 @@ This document covers the complete software design for:
 
 ### 2.2 Component Summary
 
-| Component | Responsibility |
-|-----------|---------------|
-| **Proxy Agent** | Routes user queries, creates FSM execution plans, orchestrates agents |
-| **Specialized Agents** | SQL, Python, Chart, Insight, EDA, Cleaning, Report generation |
-| **Domain Knowledge** | Knowledge generation (Map-Reduce), graph storage, coarse-to-fine retrieval |
-| **Inter-Agent Comm** | Structured info units for proxy agents plus file-backed inbox/outbox handoff between cell agents |
-| **Context Management** | Stateless DAG planning, adaptive context pruning, and per-cell workspace manifests |
-| **Execution Engines** | Sandboxed Python execution, DuckDB SQL engine |
-| **Notebook UI** | Multi-language cells, Monaco editor, chart GUI, drag-and-drop |
-| **Enterprise Control Plane** | Workspace resolution, role checks, auditable mutations, and scoped WebSocket access |
+| Component | Responsibility | Status |
+|-----------|---------------|--------|
+| **ChatBI Agent** | Handles NL→SQL and NL→Chart generation in a unified flow | Implemented |
+| **Python Agent** | Generates Python data science code from natural language | Implemented |
+| **Domain Knowledge** | Knowledge generation (Map-Reduce), graph storage, retrieval | Implemented (ChromaDB embeddings not wired) |
+| **Inter-Agent Comm** | Structured info units, shared buffer, FSM state machine | Implemented (FSM not used in practice) |
+| **Context Management** | DAG planning, variable tracking, per-cell workspace manifests | Implemented |
+| **Execution Engines** | Sandboxed Python execution, DuckDB SQL engine | Implemented |
+| **Cell Runtime** | Stateless DAG cell agents with file-backed IPC | Implemented |
+| **Notebook UI** | Multi-language cells, Monaco editor, chart rendering | Implemented |
+| **Proxy Agent** | FSM-based orchestration of specialized agents | Not implemented |
+| **Enterprise Control Plane** | Workspace, RBAC, audit, scoped WebSocket | Not implemented |
 
-### 2.3 Paper Alignment And Enterprise Delta
+### 2.3 Paper Alignment
 
-Reviewing the local paper `2412.02205v3.pdf` confirms that DataLab's core research value remains centered on three modules:
+The paper `2412.02205v3.pdf` defines three core research modules:
 
 - **Domain Knowledge Incorporation** for enterprise-specific BI semantics and jargon
 - **Inter-Agent Communication** via structured information units and FSM-driven collaboration
 - **Cell-based Context Management** for notebook-aware context pruning and token efficiency
 
-The enterprise version extends these research modules rather than replacing them. The added product layer governs who can access a workspace, which resources are visible inside that workspace, and how every mutating action is traced and audited.
+All three modules are coded but the FSM-based multi-agent orchestration (ProxyAgent routing to specialized agents) is not yet active. The `ChatBIAgent` currently handles SQL and chart generation as a single unified agent rather than orchestrating through the FSM. Enterprise governance features (workspace isolation, RBAC, audit) described in the paper extension are not yet implemented.
 
 ---
 
@@ -152,57 +155,43 @@ backend/app/
 ├── main.py              # FastAPI application factory
 ├── config.py            # Pydantic Settings (env-based config)
 ├── database.py          # SQLAlchemy engine, session factory
+├── notebook_runtime.py  # Notebook runtime bundle, context builders
 ├── api/                 # Route handlers
 │   ├── __init__.py
 │   ├── notebooks.py     # CRUD for notebooks
-│   ├── cells.py         # CRUD for cells + execution
+│   ├── cells.py         # CRUD for cells + execution + AI edit
 │   ├── agents.py        # Agent query endpoint
-│   ├── enterprise.py    # Enterprise context + audit endpoints
+│   ├── folders.py       # Folder CRUD
 │   ├── knowledge.py     # Knowledge CRUD + retrieval
-│   ├── datasources.py   # Data source connections
+│   ├── datasources.py   # Data source connections + CSV upload
 │   └── websocket.py     # WebSocket handler
 ├── models/              # SQLAlchemy ORM
 │   ├── __init__.py
-│   ├── audit.py
 │   ├── notebook.py
 │   ├── cell.py
 │   ├── datasource.py
+│   ├── folder.py
 │   ├── knowledge.py
-│   ├── membership.py
-│   ├── user.py
-│   └── workspace.py
+│   └── user.py          # Exists but not used by any endpoint
 ├── schemas/             # Pydantic schemas
 │   ├── __init__.py
-│   ├── enterprise.py
 │   ├── notebook.py
 │   ├── cell.py
 │   ├── agent.py
+│   ├── folder.py
 │   └── knowledge.py
-├── enterprise/          # Workspace context, RBAC, audit helpers
-│   ├── __init__.py
-│   ├── auth.py
-│   ├── audit.py
-│   └── resources.py
 ├── agents/              # Agent implementations
 │   ├── __init__.py
 │   ├── base.py          # BaseAgent ABC
-│   ├── proxy.py         # ProxyAgent (orchestrator)
-│   ├── sql_agent.py
-│   ├── python_agent.py
-│   ├── chart_agent.py
-│   ├── insight_agent.py
-│   ├── eda_agent.py
-│   ├── report_agent.py
-│   └── cleaning_agent.py
+│   ├── chatbi_agent.py  # ChatBIAgent (unified SQL+Chart)
+│   ├── context_builder.py # Notebook context builder for agents
+│   └── python_agent.py  # PythonAgent (NL2DSCode)
 ├── communication/       # Inter-Agent Communication
 │   ├── __init__.py
 │   ├── info_unit.py     # InformationUnit dataclass
 │   ├── shared_buffer.py # SharedInformationBuffer
-│   ├── fsm.py           # FiniteStateMachine
+│   ├── fsm.py           # FiniteStateMachine (coded, not actively used)
 │   └── protocol.py      # CommunicationProtocol
-├── cell_agents/         # Stateless cell-agent runtime
-│   ├── __init__.py
-│   └── runtime.py       # Per-cell workspace orchestration + file-backed IPC
 ├── knowledge/           # Domain Knowledge
 │   ├── __init__.py
 │   ├── generator.py     # MapReduceKnowledgeGenerator
@@ -217,13 +206,14 @@ backend/app/
 │   └── tracker.py       # VariableTracker
 ├── execution/           # Code Execution
 │   ├── __init__.py
+│   ├── cell_runtime.py  # CellRuntime (stateless DAG + file IPC)
 │   ├── python_executor.py
 │   ├── sql_executor.py
-│   └── sandbox.py
+│   └── sandbox.py       # Simple delegation sandbox
 ├── llm/                 # LLM Abstraction
 │   ├── __init__.py
 │   ├── client.py        # LiteLLM wrapper
-│   ├── tools.py         # Function call definitions
+│   ├── tools.py         # Function call definitions (not actively used)
 │   └── prompts/         # Jinja2 prompt templates
 │       ├── system.j2
 │       ├── sql_generation.j2
@@ -232,9 +222,10 @@ backend/app/
 │       ├── insight_generation.j2
 │       ├── knowledge_extraction.j2
 │       ├── query_rewrite.j2
-│       └── dsl_translation.j2
+│       ├── dsl_translation.j2
+│       ├── chat_generation.j2
+│       └── task_routing.j2
 └── utils/
-    ├── __init__.py
     └── helpers.py
 ```
 
@@ -242,9 +233,9 @@ backend/app/
 
 ```
 frontend/src/
-├── App.tsx              # Root component with router
+├── App.tsx              # Root component
 ├── main.tsx             # Entry point
-├── index.css            # Tailwind imports
+├── index.css            # Tailwind imports + custom styles
 ├── i18n/                # Internationalization
 │   ├── index.ts         # i18next config
 │   ├── en.json          # English translations
@@ -255,46 +246,36 @@ frontend/src/
 │   │   ├── CellContainer.tsx    # Generic cell wrapper
 │   │   ├── SqlCell.tsx          # SQL cell with Monaco + results table
 │   │   ├── PythonCell.tsx       # Python cell with Monaco + output
-│   │   ├── ChartCell.tsx        # Chart cell with GUI config + preview
-│   │   ├── MarkdownCell.tsx     # Markdown cell with preview
-│   │   ├── CellToolbar.tsx      # Cell action buttons
-│   │   └── AddCellButton.tsx    # Add new cell button
+│   │   ├── ChartCell.tsx        # Chart cell with JSON spec + ECharts preview
+│   │   ├── MarkdownCell.tsx     # Markdown cell with edit/preview toggle
+│   │   ├── CellToolbar.tsx      # Cell action buttons + AI edit input
+│   │   ├── AddCellButton.tsx    # Add new cell button
+│   │   ├── CellRuntimeCard.tsx  # Cell agent runtime details panel
+│   │   └── CellGenerationPanel.tsx # Right-side AI progress + draft
 │   ├── editor/
-│   │   └── MonacoEditor.tsx     # Monaco wrapper
+│   │   └── MonacoEditor.tsx     # Monaco wrapper with drag-to-resize
 │   ├── chart/
-│   │   ├── ChartRenderer.tsx    # ECharts renderer
-│   │   └── ChartConfig.tsx      # Chart configuration panel
+│   │   └── ChartRenderer.tsx    # ECharts renderer
 │   ├── sidebar/
-│   │   ├── Sidebar.tsx          # Main sidebar container
-│   │   ├── DataExplorer.tsx     # Database/table/column tree
-│   │   ├── KnowledgePanel.tsx   # Knowledge graph viewer
-│   │   └── NotebookList.tsx     # Notebook listing
+│   │   └── Sidebar.tsx          # Notebooks + data sources + folders
 │   ├── chat/
-│   │   ├── ChatPanel.tsx        # LLM chat input
-│   │   └── ChatMessage.tsx      # Chat message bubble
+│   │   └── ChatPanel.tsx        # LLM chat with sections, tables, charts
 │   ├── common/
-│   │   ├── Header.tsx           # App header with language toggle
+│   │   ├── Header.tsx           # App header with language/theme toggle
 │   │   ├── DataTable.tsx        # Tabular data display
 │   │   ├── LoadingSpinner.tsx
 │   │   └── ErrorBoundary.tsx
 │   └── layout/
 │       └── MainLayout.tsx       # App layout with sidebar
 ├── stores/              # Zustand state management
-│   ├── notebookStore.ts # Notebook & cell state
-│   ├── chatStore.ts     # Chat history state
-│   ├── uiStore.ts       # UI preferences
-│   └── datasourceStore.ts
-├── hooks/
-│   ├── useWebSocket.ts  # WebSocket connection hook
-│   ├── useNotebook.ts   # Notebook operations hook
-│   └── useAgent.ts      # Agent query hook
+│   ├── notebookStore.ts # Notebook, cell, folder, AI edit state
+│   ├── chatStore.ts     # Chat history state (WebSocket-driven)
+│   └── uiStore.ts       # UI preferences (persisted to localStorage)
 ├── services/
-│   ├── api.ts           # Axios HTTP client
-│   └── websocket.ts     # WebSocket client
-├── types/
-│   └── index.ts         # TypeScript type definitions
-└── utils/
-    └── helpers.ts
+│   ├── api.ts           # Axios HTTP client + SSE streaming
+│   └── websocket.ts     # WebSocket client with auto-reconnect
+└── types/
+    └── index.ts         # TypeScript type definitions
 ```
 
 ---
@@ -303,40 +284,37 @@ frontend/src/
 
 ### 4.1 Database Schema (SQLAlchemy)
 
-#### Enterprise Control Plane
-
-| Table | Purpose | Key Fields |
-|-------|---------|-----------|
-| `workspaces` | Top-level tenant boundary | `id`, `slug`, `name`, `status` |
-| `users` | Enterprise actor identity | `id`, `email`, `display_name`, `auth_provider` |
-| `workspace_memberships` | Role assignment inside a workspace | `workspace_id`, `user_id`, `role` |
-| `audit_events` | Immutable audit trail for governed actions | `workspace_id`, `actor_user_id`, `action`, `request_id`, `details` |
-
-All tenant-owned product entities below are now filtered by `workspace_id`.
-
 #### Notebook
 
 | Column | Type | Description |
 |--------|------|-------------|
 | id | UUID (PK) | Unique notebook identifier |
-| workspace_id | UUID (FK) | Owning workspace / tenant |
 | title | String(256) | Notebook title |
 | description | Text | Optional description |
+| folder_id | UUID (FK, nullable) | Parent folder |
 | created_at | DateTime | Creation timestamp |
 | updated_at | DateTime | Last modification timestamp |
+
+#### Folder
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID (PK) | Unique folder identifier |
+| name | String(256) | Folder name |
+| position | Integer | Display order |
+| created_at | DateTime | Creation timestamp |
 
 #### Cell
 
 | Column | Type | Description |
 |--------|------|-------------|
 | id | UUID (PK) | Unique cell identifier |
-| workspace_id | UUID (FK) | Owning workspace / tenant |
-| notebook_id | UUID (FK) | Parent notebook |
+| notebook_id | UUID (FK) | Parent notebook (cascade delete) |
 | cell_type | Enum | `sql`, `python`, `chart`, `markdown` |
 | source | Text | Cell source code/content |
-| output | JSON | Execution output (stdout, data, errors) |
+| output | JSON | Execution output (stdout, data, errors, agent runtime info) |
 | position | Integer | Order within notebook |
-| metadata | JSON | Cell-specific metadata (chart config, etc.) |
+| metadata_ | JSON | Cell-specific metadata |
 | created_at | DateTime | Creation timestamp |
 | updated_at | DateTime | Last modification timestamp |
 
@@ -345,11 +323,10 @@ All tenant-owned product entities below are now filtered by `workspace_id`.
 | Column | Type | Description |
 |--------|------|-------------|
 | id | UUID (PK) | Unique datasource identifier |
-| workspace_id | UUID (FK) | Owning workspace / tenant |
 | name | String(128) | Display name |
 | ds_type | Enum | `sqlite`, `postgresql`, `mysql`, `csv`, `duckdb` |
-| connection_string | Text | Encrypted connection string |
-| metadata | JSON | Schema cache, table list |
+| connection_string | Text | Connection string or file path (plaintext) |
+| metadata_ | JSON | Schema cache, row count, file path |
 | created_at | DateTime | Creation timestamp |
 
 #### KnowledgeNode
@@ -357,14 +334,27 @@ All tenant-owned product entities below are now filtered by `workspace_id`.
 | Column | Type | Description |
 |--------|------|-------------|
 | id | UUID (PK) | Unique node identifier |
-| workspace_id | UUID (FK) | Owning workspace / tenant |
 | node_type | Enum | `database`, `table`, `column`, `value`, `jargon`, `alias` |
 | name | String(256) | Node name |
 | parent_id | UUID (FK, nullable) | Parent node in the tree |
 | components | JSON | Knowledge components (description, usage, tags, etc.) |
-| embedding_id | String | ChromaDB embedding reference |
+| embedding_id | String(256) | ChromaDB embedding reference (not yet used) |
+| datasource_id | UUID (FK, nullable) | Associated data source |
 | created_at | DateTime | Creation timestamp |
 | updated_at | DateTime | Last modification timestamp |
+
+#### User
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID (PK) | Unique user identifier |
+| email | String(320) | Unique email |
+| display_name | String(256) | Display name |
+| auth_provider | String(64) | Auth method (default: "trusted-header") |
+| created_at | DateTime | Creation timestamp |
+| updated_at | DateTime | Last modification timestamp |
+
+**Note**: The User model exists in the schema but is not used by any API endpoint. There is no authentication or authorization enforcement.
 
 ### 4.2 In-Memory Models
 
@@ -457,27 +447,30 @@ BaseAgent (ABC)
 └── _create_info_unit(content) → InformationUnit
 ```
 
-#### 5.1.2 ProxyAgent
+#### 5.1.2 ChatBIAgent (Active Agent)
 
-The orchestrator agent that:
+The primary active agent that:
 1. Receives user queries
-2. Determines required tasks (via LLM classification)
-3. Creates an FSM execution plan
-4. Delegates subtasks to specialized agents
-5. Manages inter-agent information flow
-6. Assembles final results
+2. Generates SQL via LLM streaming
+3. Executes SQL on DuckDB
+4. Optionally generates chart specifications
+5. Streams structured progress sections to the frontend
 
-#### 5.1.3 Specialized Agents
+Supports both streaming (`execute_stream`) and synchronous (`execute`) execution.
 
-| Agent | Task | Input | Output |
-|-------|------|-------|--------|
-| SQLAgent | NL2SQL | NL query + schema + knowledge | SQL query string |
-| PythonAgent | NL2DSCode | NL query + context + data | Python code string |
-| ChartAgent | NL2VIS | NL query + data + DSL | ECharts/Vega-Lite JSON spec |
-| InsightAgent | NL2Insight | NL query + data | Insight text + supporting evidence |
-| EDAAgent | Exploratory analysis | Dataset reference | Statistical summary + recommendations |
-| CleaningAgent | Data cleaning | Dataset + issues | Cleaning code + cleaned data |
-| ReportAgent | Report generation | Analysis results | Markdown report |
+#### 5.1.3 PythonAgent
+
+Converts natural language to Python data science code using the `python_generation.j2` template.
+
+| Agent | Task | Input | Output | Status |
+|-------|------|-------|--------|--------|
+| ChatBIAgent | NL2SQL+Chart | NL query + schema + knowledge | SQL + results + chart | Active |
+| PythonAgent | NL2DSCode | NL query + context + data | Python code string | Active |
+| ProxyAgent | FSM orchestration | NL query | Coordinated multi-agent output | Not implemented |
+| InsightAgent | NL2Insight | NL query + data | Insight text | Not implemented |
+| EDAAgent | Exploratory analysis | Dataset reference | Statistical summary | Not implemented |
+| CleaningAgent | Data cleaning | Dataset + issues | Cleaning code | Not implemented |
+| ReportAgent | Report generation | Analysis results | Markdown report | Not implemented |
 
 ### 5.2 Domain Knowledge Module
 
@@ -511,9 +504,11 @@ Each node contains: `name`, `description`, `usage`, `tags`, and type-specific fi
 
 #### 5.2.3 Knowledge Retrieval (Coarse-to-Fine)
 
-1. **Coarse-Grained**: Lexical search (FTS) + Semantic search (ChromaDB cosine similarity)
+1. **Coarse-Grained**: Lexical search (SQL ILIKE) + datasource-scoped name matching
 2. **Fine-Grained Ordering**: Weighted score = ω₁·lex_score + ω₂·sem_score + ω₃·llm_score
 3. **Top-K Selection**: Return highest-scored nodes
+
+**Note**: The semantic score currently uses character-set overlap as a lightweight placeholder. ChromaDB vector embeddings are not yet integrated into the retrieval pipeline.
 
 #### 5.2.4 DSL Translation
 
@@ -536,7 +531,7 @@ Structured 6-field format replacing unstructured NL:
 - In-memory dict-based store keyed by agent role + timestamp
 - Dynamic capacity expansion (doubles when full)
 - TTL-based cleanup for outdated entries
-- Thread-safe with asyncio locks
+- Has an `asyncio.Lock` defined but synchronous methods do not acquire it
 
 #### 5.3.3 FSM-based Execution Plan
 
@@ -545,11 +540,14 @@ Generated by ProxyAgent based on query analysis:
 - States: Wait → Execution → Finish
 - Selective retrieval: each agent only receives relevant info from predecessors in the FSM
 
-#### 5.3.4 Materialized Inter-Agent Handoffs
+#### 5.3.4 Communication Protocol
 
-- The proxy agent now executes SQL-agent outputs when possible and stores a structured payload of `{query, result}` in the shared buffer
-- Downstream chart, insight, and report agents receive both the raw SQL and a preview of the tabular result through `predecessor_info`, `data_info`, and `analysis_context`
-- Agent-created notebook cells persist the generated source together with any materialized preview output so the notebook stays inspectable after orchestration finishes
+Combines SharedBuffer and FSM into a `CommunicationProtocol` class that supports:
+- Plan setup from execution plan
+- Context preparation (selective retrieval from predecessors)
+- Result storage and agent lifecycle management
+
+**Note**: The CommunicationProtocol is coded but not actively used since the ProxyAgent doesn't exist yet.
 
 ### 5.4 Cell-based Context Management
 
@@ -577,13 +575,13 @@ Generated by ProxyAgent based on query analysis:
 - Markdown cells resolve placeholders such as `{{ sales_summary.row_count }}`, `{{ product_metrics.columns }}`, and `{{ product_metrics.preview }}`
 - AI-edit requests reuse the same runtime bundle to build cell-specific context and preserve linkage contracts such as SQL output aliases, chart `data_source` references, and markdown placeholders
 
-#### 5.4.4 Cell-Agent Runtime
+#### 5.4.4 Cell Runtime (Stateless DAG + File IPC)
 
-- Every notebook cell is treated as a cell agent with its own workspace directory under `data/cell_agents/<workspace>/<notebook>/<position>-<type>-<id>/`
+- Every notebook cell is treated as a cell agent with its own workspace directory under `data/cell_runtime/<notebook>/<position>-<type>-<id>/`
 - Each execution request rebuilds a fresh DAG plan and executes only the target cell plus its ancestors in notebook order
-- Every workspace contains `source.*`, `task.json`, `task.md`, `context.json`, `output.json`, and `inbox/` + `outbox/` folders
+- Every workspace contains `agent.json`, `source.*`, `task.json`, `task.md`, `context.json`, `bootstrap.py`, `output.json`, and `inbox/` + `outbox/` folders
 - Direct dependency messages are written as JSON files and copied from the producer cell's `outbox/` into the consumer cell's `inbox/`
-- The frontend surfaces this runtime state through the `Cell Agent Runtime` panel on executed cells and through the right-side AI progress rail
+- The frontend surfaces runtime state through the `Cell Agent Runtime` details panel on executed cells
 
 ### 5.5 Core Implementations
 
@@ -670,18 +668,7 @@ graph LR
 
 ### 6.1 REST Endpoints
 
-All REST requests are resolved against an enterprise context using:
-
-- `X-DataLab-Workspace`
-- `X-DataLab-User-Email`
-- `X-Request-ID` (optional; generated if absent)
-
-#### Enterprise
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/enterprise/context` | Resolve active workspace, user, role, and accessible workspaces |
-| GET | `/api/enterprise/audit-events` | List recent audit events for owners/admins in the active workspace |
+Request ID middleware generates a UUID for each request (or uses `X-Request-ID` if provided).
 
 #### Notebooks
 
@@ -693,6 +680,15 @@ All REST requests are resolved against an enterprise context using:
 | PUT | `/api/notebooks/{id}` | Update notebook metadata |
 | DELETE | `/api/notebooks/{id}` | Delete notebook |
 
+#### Folders
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/folders` | List all folders |
+| POST | `/api/folders` | Create folder |
+| PUT | `/api/folders/{id}` | Update folder name/position |
+| DELETE | `/api/folders/{id}` | Delete folder (unlinks notebooks) |
+
 #### Cells
 
 | Method | Path | Description |
@@ -700,16 +696,15 @@ All REST requests are resolved against an enterprise context using:
 | POST | `/api/notebooks/{id}/cells` | Add cell to notebook |
 | PUT | `/api/cells/{id}` | Update cell content |
 | DELETE | `/api/cells/{id}` | Delete cell |
-| POST | `/api/cells/{id}/execute` | Execute cell code |
-| POST | `/api/cells/{id}/edit-with-ai` | Stream an AI rewrite for a specific cell |
+| POST | `/api/cells/{id}/execute` | Execute cell via DAG runtime |
+| POST | `/api/cells/{id}/edit-with-ai` | Stream an AI rewrite (SSE) |
 | PUT | `/api/cells/{id}/move` | Reorder cell |
 
 #### Agents
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/agents/query` | Submit NL query to agent framework |
-| GET | `/api/agents/status/{task_id}` | Get agent task status |
+| POST | `/api/agents/query` | Submit NL query to ChatBI agent |
 
 #### Knowledge
 
@@ -717,7 +712,8 @@ All REST requests are resolved against an enterprise context using:
 |--------|------|-------------|
 | POST | `/api/knowledge/generate` | Trigger knowledge generation for a datasource |
 | GET | `/api/knowledge/search` | Search knowledge graph |
-| GET | `/api/knowledge/graph/{datasource_id}` | Get knowledge graph |
+| GET | `/api/knowledge/graph/{datasource_id}` | Get knowledge graph tree |
+| POST | `/api/knowledge/nodes` | Create a knowledge node |
 
 #### Data Sources
 
@@ -725,24 +721,19 @@ All REST requests are resolved against an enterprise context using:
 |--------|------|-------------|
 | GET | `/api/datasources` | List data sources |
 | POST | `/api/datasources` | Add data source |
+| POST | `/api/datasources/upload-csv` | Upload CSV file as data source |
 | GET | `/api/datasources/{id}/schema` | Get schema (tables/columns) |
 | POST | `/api/datasources/{id}/query` | Execute raw SQL |
 
-### 6.2 Authorization And Scoping Rules
+#### Health
 
-- Viewer and above: read notebooks, folders, datasources, and knowledge
-- Analyst and above: create or mutate notebooks, cells, datasources, knowledge, and agent executions
-- Admin and owner: read audit events
-- All direct resource lookups (`/cells/{id}`, `/notebooks/{id}`, etc.) are filtered by `workspace_id`
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | Health check |
 
-### 6.3 WebSocket Protocol
+### 6.2 WebSocket Protocol
 
 Endpoint: `ws://host/ws/{notebook_id}`
-
-Enterprise context is supplied through query parameters:
-
-- `workspace`
-- `user`
 
 Messages follow the format:
 
@@ -755,15 +746,19 @@ Messages follow the format:
 ```
 
 **Client → Server**:
-- `cell_execute`: `{ "cell_id": "...", "source": "..." }`
-- `agent_query`: `{ "query": "...", "notebook_id": "...", "cell_id": "..." }`
+- `cell_execute`: `{ "cell_id": "...", "source": "...", "cell_type": "..." }`
+- `agent_query`: `{ "query": "...", "datasource_id": "..." }`
+- `ping`: heartbeat
 
 **Server → Client**:
-- `agent_progress`: `{ "task_id": "...", "status": "...", "agent": "...", "message": "..." }`
-- `cell_update`: `{ "cell_id": "...", "output": {...}, "status": "success|error" }`
-- `cell_create`: `{ "cell": { "id": "...", "type": "...", "source": "...", "position": N } }`
+- `agent_progress`: `{ "task_id": "...", "status": "...", "message": "...", "data": ..., "chart": ..., "sections": [...] }`
+- `agent_complete`: `{ "task_id": "...", "status": "completed", "cells_created": [...] }`
+- `cell_update`: `{ "cell_id": "...", "status": "...", "output": {...} }`
+- `pong`: heartbeat response
 
-### 6.4 AI Edit Streaming
+**Note**: WebSocket cell execution uses the simple `ExecutionSandbox` (no DAG, no context, no IPC), while REST cell execution uses the full `CellRuntime` with DAG planning. This is a known inconsistency.
+
+### 6.3 AI Edit Streaming (SSE)
 
 Endpoint: `POST /api/cells/{id}/edit-with-ai`
 
@@ -783,49 +778,50 @@ Event sequence:
 ### 7.1 State Management (Zustand)
 
 #### NotebookStore
-- `notebooks: Notebook[]`
+- `notebooks: NotebookListItem[]`
+- `folders: Folder[]`
 - `activeNotebook: Notebook | null`
-- `cells: Map<string, Cell>`
+- `cells: Cell[]`
 - `aiEditStateByCellId: Record<string, CellAIState>`
-- Actions: `loadNotebook`, `addCell`, `updateCell`, `deleteCell`, `moveCell`, `executeCell`, `editCellWithAI`, `clearCellAIState`
+- Actions: `loadNotebook`, `addCell`, `updateCellSource`, `deleteCell`, `moveCell`, `executeCell`, `editCellWithAI`, `clearCellAIState`, `fetchFolders`, `createFolder`, `renameFolder`, `removeFolder`, `moveToFolder`
 
 #### ChatStore
 - `messages: ChatMessage[]`
 - `isLoading: boolean`
-- Actions: `sendQuery`, `addMessage`, `clearHistory`
+- `activeDatasourceId: string | null`
+- Actions: `sendQuery` (via WebSocket), `addMessage`, `updateMessage`, `clearHistory`, `setDatasource`
 
-#### UIStore
-- `sidebarOpen: boolean`
+#### UIStore (persisted to localStorage)
 - `language: 'en' | 'zh'`
-- `theme: 'light' | 'dark'`
-
-#### EnterpriseStore
-- `context: EnterpriseContext | null`
-- `auditEvents: AuditEvent[]`
-- `workspaceKey: string | null`
-- Actions: `fetchContext`, `refreshAudit`, `setWorkspaceKey`
+- `darkMode: boolean`
+- `sidebarOpen: boolean`
+- `chatOpen: boolean`
+- Actions: `toggleLanguage`, `toggleDarkMode`, `toggleSidebar`, `toggleChat`
 
 ### 7.2 Component Hierarchy
 
 ```
 App
-└── MainLayout
-    ├── Header (logo, workspace selector, role badge, language toggle, theme toggle)
-    ├── Sidebar
-    │   ├── NotebookList
-    │   ├── DataExplorer (tree: DB → Table → Column)
-    │   └── AuditPanel
-    └── MainContent
-        ├── Notebook
-        │   ├── CellContainer (for each cell)
-        │   │   ├── CellToolbar (run, delete, move, type badge)
-        │   │   ├── SqlCell / PythonCell / ChartCell / MarkdownCell
-        │   │   ├── CellOutput (data table, stdout, chart, rendered markdown)
-        │   │   └── CellGenerationPanel (right-side AI progress and live draft)
-        │   └── AddCellButton
-        └── ChatPanel (floating, toggleable)
-            ├── ChatMessage (user / assistant bubbles)
-            └── ChatInput (text input + send button)
+└── ErrorBoundary
+    └── MainLayout
+        ├── Header (logo, language toggle, theme toggle, sidebar toggle)
+        ├── Sidebar
+        │   ├── Notebooks tab (folders, drag-and-drop, rename, delete)
+        │   └── Data Sources tab (list, CSV upload)
+        ├── MainContent
+        │   └── Notebook
+        │       ├── CellContainer (for each cell)
+        │       │   ├── CellToolbar (run, delete, move, AI edit input)
+        │       │   ├── SqlCell / PythonCell / ChartCell / MarkdownCell
+        │       │   ├── CellRuntimeCard (runtime details)
+        │       │   └── CellGenerationPanel (right-side AI progress + draft)
+        │       └── AddCellButton
+        ├── ChatPanel (resizable side panel)
+        │   ├── MessageSection (collapsible progress sections)
+        │   ├── DataTable (inline results)
+        │   ├── ChartRenderer (inline charts)
+        │   └── ChatInput
+        └── Floating Chat Toggle Button
 ```
 
 ### 7.3 Cell Types
@@ -833,9 +829,9 @@ App
 | Cell Type | Editor | Output |
 |-----------|--------|--------|
 | SQL | Monaco (SQL mode) | DataTable component |
-| Python | Monaco (Python mode) | stdout + DataTable + images |
-| Chart | JSON spec + notebook `data_source` binding | ECharts renderer |
-| Markdown | Monaco (Markdown mode) | Rendered preview with resolved notebook placeholders |
+| Python | Monaco (Python mode, **currently readOnly**) | stdout + DataTable + stderr |
+| Chart | Monaco (JSON mode) + live ECharts preview | ECharts renderer with notebook data binding |
+| Markdown | Monaco (Markdown mode) with edit/preview toggle | Rendered markdown with resolved placeholders |
 
 ---
 
@@ -844,38 +840,35 @@ App
 ### 8.1 Python Execution Sandbox
 
 - Subprocess-based execution with timeout (default 30s)
-- Prefers the project virtualenv interpreter when available to avoid host Python package drift
-- Resource limits: memory (512MB), CPU time
-- Restricted imports: block `os.system`, `subprocess`, `shutil.rmtree`, etc.
-- Temp directory isolation per execution
-- Output capture: stdout, stderr, generated files
+- Prefers the project virtualenv interpreter when available
+- Temp file isolation per execution (cleaned up after)
+- Output capture: stdout, stderr, DataFrames, exported values
+- No OS-level resource limits (memory, CPU) enforced at process level
+- No import restrictions enforced
 
 ### 8.2 SQL Execution
 
 - DuckDB in-process for uploaded CSV/Parquet files
-- Connection pooling for external databases
-- Query timeout enforcement
-- Read-only mode for exploration queries
+- `execute_isolated` creates a fresh connection per query for cell runtime execution
+- Persistent connections per datasource for direct queries
+- No query timeout enforcement beyond DuckDB defaults
 
 ### 8.3 API Security
 
-- CORS configuration for frontend origin
-- Rate limiting on agent query endpoints
-- Input sanitization for all user-provided content
+- CORS configuration for frontend origin (configurable via `cors_origins`)
+- Request ID middleware (generates UUID if not provided via `X-Request-ID`)
+- No authentication or authorization enforcement
+- No rate limiting
+- No input sanitization beyond Pydantic validation
 
-### 8.4 Enterprise Workspace Governance
+### 8.4 Known Security Gaps
 
-- Trusted-header enterprise context resolution for user and workspace identity
-- Role-based access control with `owner`, `admin`, `analyst`, and `viewer`
-- Workspace scoping across notebooks, cells, folders, datasources, and knowledge nodes
-- Governed WebSocket admission based on workspace membership and notebook ownership
-
-### 8.5 Auditability And Traceability
-
-- Every mutating REST action emits an `audit_events` record
-- Each request is tagged with an `X-Request-ID` response header
-- The admin UI exposes a recent audit feed for operational review
-- Audit payloads record resource type, resource id, actor, action, and structured details
+- No authentication: any client can access any notebook, cell, or data source
+- No authorization: no RBAC checks on any endpoint
+- No audit logging: mutations are not recorded
+- `/api/datasources/{id}/query` accepts arbitrary SQL without restrictions
+- Python subprocess sandbox does not enforce memory or CPU limits
+- Connection strings stored in plaintext
 
 ---
 
@@ -937,25 +930,16 @@ services:
     depends_on: [backend]
 ```
 
-### 10.3 Enterprise Deployment Notes
-
-- Production deployments should terminate identity at a trusted upstream gateway or SSO layer and inject `X-DataLab-Workspace` plus `X-DataLab-User-Email`
-- Audit events should be exported to centralized logging or SIEM storage
-- SQLite remains suitable for demos; production enterprise deployments should use PostgreSQL
-
-### 10.4 Environment Variables
+### 10.3 Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `sqlite:///./data/datalab.db` | Database connection |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./data/datalab.db` | Database connection |
 | `LITELLM_MODEL` | `gpt-4o` | Default LLM model |
 | `OPENAI_API_KEY` | (required) | OpenAI API key |
 | `ANTHROPIC_API_KEY` | (optional) | Anthropic API key |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL |
 | `CHROMA_PERSIST_DIR` | `./data/chroma` | ChromaDB storage path |
 | `SANDBOX_TIMEOUT` | `30` | Python execution timeout (seconds) |
-| `SANDBOX_MEMORY_MB` | `512` | Python execution memory limit |
-| `CORS_ORIGINS` | `http://localhost:5173` | Allowed CORS origins |
-| `DEFAULT_WORKSPACE_SLUG` | `demo-hq` | Bootstrapped local workspace slug |
-| `DEFAULT_WORKSPACE_NAME` | `Demo HQ` | Bootstrapped local workspace name |
-| `DEFAULT_USER_EMAIL` | `admin@datalab.local` | Bootstrapped local enterprise user |
+| `SANDBOX_MEMORY_MB` | `512` | Python execution memory limit (not enforced) |
+| `CORS_ORIGINS` | `http://localhost:5171,...` | Allowed CORS origins |

@@ -14,8 +14,8 @@ from app.agents import chatbi_agent
 from app.agents.context_builder import load_notebook_query_context
 from app.config import settings
 from app.database import async_session_factory
-from app.execution import execution_sandbox
-from app.models import Notebook
+from app.execution.cell_runtime import CellRuntime
+from app.models import Cell, DataSource, Notebook
 from app.models.cell import CellType
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+cell_runtime = CellRuntime()
 
 
 @router.websocket("/ws/{notebook_id}")
@@ -101,30 +102,61 @@ async def _handle_cell_execute(
     payload = message.get("payload", {})
     cell_id = payload.get("cell_id", "")
     source = payload.get("source", "")
-    cell_type_str = payload.get("cell_type", "python")
-
-    try:
-        cell_type = CellType(cell_type_str)
-    except ValueError:
-        cell_type = CellType.PYTHON
-
-    datasource_id = payload.get("datasource_id")
 
     await websocket.send_text(json.dumps({
         "type": "cell_update",
         "payload": {"cell_id": cell_id, "status": "running"},
     }))
 
-    output = await execution_sandbox.execute(cell_type, source, datasource_id=datasource_id)
+    try:
+        async with async_session_factory() as session:
+            cell = await session.get(Cell, cell_id)
+            if not cell:
+                raise ValueError(f"Cell {cell_id} not found")
 
-    await manager.broadcast(notebook_id, {
-        "type": "cell_update",
-        "payload": {
-            "cell_id": cell_id,
-            "status": output.get("status", "error"),
-            "output": output,
-        },
-    })
+            notebook_cells_result = await session.execute(
+                select(Cell)
+                .where(Cell.notebook_id == notebook_id)
+                .order_by(Cell.position)
+            )
+            notebook_cells = notebook_cells_result.scalars().all()
+
+            datasource_result = await session.execute(select(DataSource))
+            workspace_datasources = datasource_result.scalars().all()
+
+            source_overrides = {cell_id: source} if source else None
+            execution_result = await cell_runtime.execute_target(
+                notebook_cells,
+                cell_id,
+                source_overrides=source_overrides,
+                datasources=workspace_datasources,
+            )
+
+            for notebook_cell in notebook_cells:
+                if notebook_cell.id in execution_result.outputs_by_id:
+                    notebook_cell.output = execution_result.outputs_by_id[notebook_cell.id]
+
+            await session.flush()
+
+        for executed_id, output in execution_result.outputs_by_id.items():
+            await manager.broadcast(notebook_id, {
+                "type": "cell_update",
+                "payload": {
+                    "cell_id": executed_id,
+                    "status": output.get("status", "error"),
+                    "output": output,
+                },
+            })
+    except Exception as e:
+        logger.error(f"Cell execution error: {e}")
+        await manager.broadcast(notebook_id, {
+            "type": "cell_update",
+            "payload": {
+                "cell_id": cell_id,
+                "status": "error",
+                "output": {"status": "error", "error": str(e)},
+            },
+        })
 
 
 async def _handle_agent_query(

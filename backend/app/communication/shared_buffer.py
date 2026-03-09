@@ -42,65 +42,73 @@ class SharedBuffer:
     def capacity(self) -> int:
         return self._capacity
 
-    def store(self, info: InformationUnit) -> None:
+    async def store(self, info: InformationUnit) -> None:
         """Store an information unit in the buffer."""
-        if self._total_items >= self._capacity:
-            self._expand()
-            self._cleanup()
+        async with self._lock:
+            if self._total_items >= self._capacity:
+                self._expand()
+                self._cleanup()
 
-        self._buffer[info.role].append(info)
-        self._total_items += 1
-        logger.debug(f"Stored info unit from {info.role}: {info.action}")
+            self._buffer[info.role].append(info)
+            self._total_items += 1
+            logger.debug(f"Stored info unit from {info.role}: {info.action}")
 
-    def retrieve_by_role(self, role: str) -> list[InformationUnit]:
+    async def retrieve_by_role(self, role: str) -> list[InformationUnit]:
         """Retrieve all information units from a specific agent role."""
-        return list(self._buffer.get(role, []))
+        async with self._lock:
+            return list(self._buffer.get(role, []))
 
-    def retrieve_latest(self, role: str) -> Optional[InformationUnit]:
+    async def retrieve_latest(self, role: str) -> Optional[InformationUnit]:
         """Retrieve the most recent information unit from a role."""
-        units = self._buffer.get(role, [])
-        return units[-1] if units else None
+        async with self._lock:
+            units = self._buffer.get(role, [])
+            return units[-1] if units else None
 
-    def retrieve_for_agent(
+    async def retrieve_for_agent(
         self, agent_name: str, predecessor_roles: list[str]
     ) -> list[InformationUnit]:
         """Selective retrieval: get info units only from predecessor agents."""
-        results = []
-        for role in predecessor_roles:
-            results.extend(self._buffer.get(role, []))
-        results.sort(key=lambda u: u.timestamp)
-        return results
+        async with self._lock:
+            results = []
+            for role in predecessor_roles:
+                results.extend(self._buffer.get(role, []))
+            results.sort(key=lambda u: u.timestamp)
+            return results
 
-    def retrieve_all(self) -> list[InformationUnit]:
+    async def retrieve_all(self) -> list[InformationUnit]:
         """Retrieve all information units from all agents."""
-        all_units = []
-        for units in self._buffer.values():
-            all_units.extend(units)
-        all_units.sort(key=lambda u: u.timestamp)
-        return all_units
+        async with self._lock:
+            all_units = []
+            for units in self._buffer.values():
+                all_units.extend(units)
+            all_units.sort(key=lambda u: u.timestamp)
+            return all_units
 
-    def retrieve_by_datasource(self, data_source: str) -> list[InformationUnit]:
+    async def retrieve_by_datasource(self, data_source: str) -> list[InformationUnit]:
         """Retrieve all info units related to a specific data source."""
-        results = []
-        for units in self._buffer.values():
-            for unit in units:
-                if unit.data_source == data_source:
-                    results.append(unit)
-        return results
+        async with self._lock:
+            results = []
+            for units in self._buffer.values():
+                for unit in units:
+                    if unit.data_source == data_source:
+                        results.append(unit)
+            return results
 
-    def update(self, info_id: str, new_info: InformationUnit) -> bool:
+    async def update(self, info_id: str, new_info: InformationUnit) -> bool:
         """Update an existing info unit (removes old, adds new)."""
-        for role, units in self._buffer.items():
-            for i, unit in enumerate(units):
-                if unit.id == info_id:
-                    self._buffer[role][i] = new_info
-                    return True
-        return False
+        async with self._lock:
+            for role, units in self._buffer.items():
+                for i, unit in enumerate(units):
+                    if unit.id == info_id:
+                        self._buffer[role][i] = new_info
+                        return True
+            return False
 
-    def clear(self) -> None:
+    async def clear(self) -> None:
         """Clear all entries from the buffer."""
-        self._buffer.clear()
-        self._total_items = 0
+        async with self._lock:
+            self._buffer.clear()
+            self._total_items = 0
 
     def _expand(self) -> None:
         """Double the buffer capacity."""

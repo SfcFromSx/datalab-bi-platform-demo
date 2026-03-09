@@ -28,6 +28,7 @@ class KnowledgeGraph:
         parent_id: Optional[str] = None,
         components: Optional[dict] = None,
         datasource_id: Optional[str] = None,
+        workspace_id: Optional[str] = None,
     ) -> KnowledgeNode:
         node = KnowledgeNode(
             node_type=node_type,
@@ -53,6 +54,7 @@ class KnowledgeGraph:
         self,
         session: AsyncSession,
         root_id: Optional[str] = None,
+        workspace_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         """Get the knowledge tree starting from a root node."""
         if root_id:
@@ -79,6 +81,7 @@ class KnowledgeGraph:
         self,
         session: AsyncSession,
         datasource_id: str,
+        workspace_id: Optional[str] = None,
     ) -> list[KnowledgeNode]:
         stmt = select(KnowledgeNode).where(KnowledgeNode.datasource_id == datasource_id)
         result = await session.execute(stmt)
@@ -100,8 +103,14 @@ class KnowledgeGraph:
         session: AsyncSession,
         knowledge: dict[str, Any],
         datasource_id: str,
+        workspace_id: Optional[str] = None,
     ) -> None:
-        """Populate the knowledge graph from generated knowledge components."""
+        """Populate the knowledge graph from generated knowledge components.
+
+        Supports both single-table format (``{"table": {...}, "columns": {...}}``)
+        and multi-table format (``{"tables": [{"name": ..., "columns": {...}}, ...]}``)
+        produced by the knowledge generator.
+        """
         db_info = knowledge.get("database", {})
         db_node = await self.add_node(
             session,
@@ -111,31 +120,39 @@ class KnowledgeGraph:
             datasource_id=datasource_id,
         )
 
-        table_info = knowledge.get("table", {})
-        table_node = await self.add_node(
-            session,
-            KnowledgeNodeType.TABLE,
-            table_info.get("name", "table"),
-            parent_id=db_node.id,
-            components=table_info,
-            datasource_id=datasource_id,
-        )
+        tables: list[dict[str, Any]] = knowledge.get("tables", [])
+        if not tables:
+            table_info = knowledge.get("table", {})
+            if table_info:
+                columns = knowledge.get("columns", {})
+                tables = [{**table_info, "columns": columns}]
 
-        columns = knowledge.get("columns", {})
-        for col_name, col_info in columns.items():
-            await self.add_node(
+        for table_entry in tables:
+            table_node = await self.add_node(
                 session,
-                KnowledgeNodeType.COLUMN,
-                col_name,
-                parent_id=table_node.id,
-                components=col_info,
+                KnowledgeNodeType.TABLE,
+                table_entry.get("name", "table"),
+                parent_id=db_node.id,
+                components={k: v for k, v in table_entry.items() if k != "columns"},
                 datasource_id=datasource_id,
             )
+
+            columns = table_entry.get("columns", {})
+            for col_name, col_info in columns.items():
+                await self.add_node(
+                    session,
+                    KnowledgeNodeType.COLUMN,
+                    col_name,
+                    parent_id=table_node.id,
+                    components=col_info if isinstance(col_info, dict) else {"description": col_info},
+                    datasource_id=datasource_id,
+                )
 
     async def delete_for_datasource(
         self,
         session: AsyncSession,
         datasource_id: str,
+        workspace_id: Optional[str] = None,
     ) -> int:
         nodes = await self.get_nodes_by_datasource(
             session,
