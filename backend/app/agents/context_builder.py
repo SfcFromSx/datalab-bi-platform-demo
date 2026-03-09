@@ -28,6 +28,8 @@ def build_notebook_query_context(
         "cell_context": [],
         "datasource_context": _format_datasource_context(datasource),
         "available_bindings": [],
+        "raw_tables": {},
+        "datasources": [],
     }
 
     cell_list = list(cells)
@@ -56,6 +58,9 @@ def build_notebook_query_context(
         "value_context": query_context["value_context"],
         "cell_context": cell_context,
         "datasource_context": _format_datasource_context(datasource),
+        "datasource": datasource,
+        "datasource_id": datasource.id if datasource else None,
+        "raw_tables": json.loads(query_context["table_context"]),
         "available_bindings": bindings,
     }
 
@@ -75,13 +80,20 @@ async def load_notebook_query_context(
     )
     cells = cells_result.scalars().all()
     datasource = await session.get(DataSource, datasource_id) if datasource_id else None
-    return build_notebook_query_context(
+    
+    # Fetch all datasources for the workspace to ensure parity with isolated execution
+    ds_result = await session.execute(select(DataSource))
+    all_datasources = ds_result.scalars().all()
+    
+    context = build_notebook_query_context(
         cells,
         query,
         focus_cell_id=focus_cell_id,
         datasource=datasource,
         limit=limit,
     )
+    context["datasources"] = all_datasources
+    return context
 
 
 def _format_datasource_context(datasource: DataSource | None) -> str:

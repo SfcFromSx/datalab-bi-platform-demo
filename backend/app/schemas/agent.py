@@ -18,6 +18,9 @@ class AgentQueryResponse(BaseModel):
     message: str = ""
     cells_created: list[dict] = []
     cells_modified: list[dict] = []
+    data: Optional[dict] = None
+    chart: Optional[dict] = None
+    sections: list[dict] = []
 
 
 class AgentProgressMessage(BaseModel):
@@ -26,3 +29,6 @@ class AgentProgressMessage(BaseModel):
     agent: str = ""
     message: str = ""
     progress: float = 0.0  # 0.0 to 1.0
+    data: Optional[dict] = None
+    chart: Optional[dict] = None
+    sections: list[dict] = []

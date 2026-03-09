@@ -10,8 +10,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from app.agents import proxy_agent
+from app.agents import chatbi_agent
 from app.agents.context_builder import load_notebook_query_context
+from app.config import settings
 from app.database import async_session_factory
 from app.execution import execution_sandbox
 from app.models import Notebook
@@ -107,12 +108,14 @@ async def _handle_cell_execute(
     except ValueError:
         cell_type = CellType.PYTHON
 
+    datasource_id = payload.get("datasource_id")
+
     await websocket.send_text(json.dumps({
         "type": "cell_update",
         "payload": {"cell_id": cell_id, "status": "running"},
     }))
 
-    output = await execution_sandbox.execute(cell_type, source)
+    output = await execution_sandbox.execute(cell_type, source, datasource_id=datasource_id)
 
     await manager.broadcast(notebook_id, {
         "type": "cell_update",
@@ -152,12 +155,34 @@ async def _handle_agent_query(
                 datasource_id=datasource_id,
             )
 
-        result = await proxy_agent.execute(query, agent_context)
-
-        content = result.content
-        agent_msg = "Task completed successfully"
-        if isinstance(content, dict) and "message" in content:
-            agent_msg = content["message"]
+        final_message = ""
+        async for update in chatbi_agent.execute_stream(query, agent_context):
+            msg_content = ""
+            data_content = None
+            chart_content = None
+            sections_content = []
+            
+            if isinstance(update, dict):
+                msg_content = update.get("message", "")
+                data_content = update.get("data")
+                chart_content = update.get("chart")
+                sections_content = update.get("sections", [])
+            else:
+                msg_content = update
+                
+            final_message = msg_content
+            
+            await manager.broadcast(notebook_id, {
+                "type": "agent_progress",
+                "payload": {
+                    "task_id": task_id,
+                    "status": "running",
+                    "message": msg_content,
+                    "data": data_content,
+                    "chart": chart_content,
+                    "sections": sections_content,
+                },
+            })
 
         await manager.broadcast(notebook_id, {
             "type": "agent_complete",
@@ -165,15 +190,15 @@ async def _handle_agent_query(
                 "task_id": task_id,
                 "status": "completed",
                 "cells_created": [],
-                "message": agent_msg,
+                "message": final_message,
             },
         })
     except Exception as e:
-        await websocket.send_text(json.dumps({
+        await manager.broadcast(notebook_id, {
             "type": "agent_progress",
             "payload": {
                 "task_id": task_id,
                 "status": "error",
                 "message": str(e),
             },
-        }))
+        })

@@ -44,6 +44,7 @@ export interface CellAIState {
 
 export interface CellAgentRuntimeInfo {
   mode: string;
+  cell_id?: string;
   run_id?: string;
   workspace_dir: string;
   source_file?: string;
@@ -118,6 +119,17 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   cells_created?: CellCreated[];
+  data?: TableData;
+  chart?: any;
+  sections?: ChatSection[];
+}
+
+export interface ChatSection {
+  id: string;
+  title: string;
+  content: string;
+  status: 'running' | 'done' | 'error';
+  type: 'markdown' | 'sql' | 'chart' | 'table';
 }
 
 export interface CellCreated {

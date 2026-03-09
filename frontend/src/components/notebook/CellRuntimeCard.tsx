@@ -12,6 +12,9 @@ export default function CellRuntimeCard({ runtime }: Props) {
       </summary>
       <div className="mt-3 space-y-2">
         <p>
+          <span className="font-semibold">Cell ID:</span> {runtime.cell_id || 'unknown'}
+        </p>
+        <p>
           <span className="font-semibold">Mode:</span> {runtime.mode}
         </p>
         <p>

@@ -75,6 +75,12 @@ async def create_cell(
     )
     session.add(cell)
     await session.flush()
+
+    notebook_cells = await _load_notebook_cells(session, notebook_id)
+    agent_info = cell_runtime.describe_cell(notebook_cells, cell.id)
+    cell.output = {"agent": agent_info}
+
+    await session.flush()
     await session.refresh(cell)
     return cell
 
@@ -91,8 +97,18 @@ async def update_cell(
 
     if data.source is not None:
         cell.source = data.source
-    if data.metadata is not None:
-        cell.metadata_ = data.metadata
+        # Clear execution output when source changes to prevent stale results
+        # We keep the 'agent' info as it contains useful runtime metadata
+        agent_info = dict(cell.output).get("agent") if cell.output else None
+        cell.output = {"agent": agent_info} if agent_info else None
+
+    await session.flush()
+
+    notebook_cells = await _load_notebook_cells(session, cell.notebook_id)
+    agent_info = cell_runtime.describe_cell(notebook_cells, cell.id)
+    output = dict(cell.output) if cell.output else {}
+    output["agent"] = agent_info
+    cell.output = output
 
     await session.flush()
     await session.refresh(cell)

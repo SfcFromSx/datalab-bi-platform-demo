@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     sandbox_memory_mb: int = 512
 
     # CORS
-    cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    cors_origins: List[str] = ["http://localhost:5171", "http://localhost:5173", "http://localhost:3000"]
 
     # Server
     host: str = "0.0.0.0"

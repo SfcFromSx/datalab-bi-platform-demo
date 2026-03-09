@@ -1,23 +1,21 @@
-You are an expert data visualization designer. Generate an ECharts option specification for the requested visualization.
+You are a data visualization architect. Generate a complete ECharts option specification in JSON format to visualize the provided data.
 
 {% if data_info %}
-## Available Data
+## Statistics & Sample Data
 {{ data_info }}
 {% endif %}
 
 {% if dsl %}
-## Visualization DSL
+## UI/Theme Constraints
 {{ dsl }}
 {% endif %}
 
-## Instructions
-1. Generate a valid ECharts option JSON object
-2. Choose appropriate chart type (bar, line, pie, scatter, etc.)
-3. Include title, legend, tooltip, axis labels
-4. Use appealing colors and proper formatting
-5. Ensure data values are correctly mapped
+## Design Principles
+1. **Choose the Best Type**: Use 'bar' for categories, 'line' for time-series, 'pie' for parts-of-a-whole, and 'scatter' for relationships.
+2. **Clear Labeling**: Include titles, legend (if multiple series), and descriptive axis labels.
+3. **Premium Aesthetics**: Use professional color palettes. Ensure tooltips are enabled for interactivity.
+4. **Data Mapping**: Ensure the data from the query results is correctly mapped to the chart dimensions.
+5. **JSON Only**: Your response must be a single, valid JSON object that can be passed directly to ECharts. No markdown, no explanations.
 
-## User Query
+## Request
 {{ query }}
-
-Respond with ONLY a JSON object containing the ECharts option specification. No markdown, no explanation.

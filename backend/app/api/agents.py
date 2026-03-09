@@ -8,7 +8,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents import proxy_agent
+from app.agents import chatbi_agent
 from app.agents.context_builder import load_notebook_query_context
 from app.database import get_session
 from app.models import Notebook
@@ -36,7 +36,10 @@ async def agent_query(
             focus_cell_id=data.cell_id,
             datasource_id=data.datasource_id,
         )
-        agent_result = await proxy_agent.execute(data.query, agent_context)
+        agent_result = await chatbi_agent.execute(
+            data.query,
+            agent_context,
+        )
     except Exception as e:
         logger.error(f"Agent execution failed: {e}")
         return AgentQueryResponse(
@@ -47,8 +50,13 @@ async def agent_query(
 
     content = agent_result.content
     agent_msg = "Agent task completed successfully"
-    if isinstance(content, dict) and "message" in content:
-        agent_msg = content["message"]
+    cells_created = []
+    
+    if isinstance(content, dict):
+        if "message" in content:
+            agent_msg = content["message"]
+        if "results" in content:
+             cells_created = content["results"]
 
     return AgentQueryResponse(
         task_id=(
@@ -58,5 +66,5 @@ async def agent_query(
         ),
         status="completed",
         message=agent_msg,
-        cells_created=[],
+        cells_created=cells_created,
     )

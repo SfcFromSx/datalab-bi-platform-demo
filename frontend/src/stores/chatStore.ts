@@ -62,6 +62,9 @@ wsClient.on('agent_progress', (message) => {
   if (existing) {
     store.updateMessage(payload.task_id, {
       content: payload.message || existing.content,
+      data: payload.data,
+      chart: payload.chart,
+      sections: payload.sections,
     });
   } else {
     store.addMessage({
@@ -69,6 +72,9 @@ wsClient.on('agent_progress', (message) => {
       role: 'assistant',
       content: payload.message || 'Processing...',
       timestamp: Date.now(),
+      data: payload.data,
+      chart: payload.chart,
+      sections: payload.sections,
     });
   }
 
@@ -85,6 +91,9 @@ wsClient.on('agent_complete', (message) => {
   store.updateMessage(payload.task_id, {
     content: payload.message || 'Completed',
     cells_created: payload.cells_created,
+    data: payload.data,
+    chart: payload.chart,
+    sections: payload.sections,
   });
   useChatStore.setState({ isLoading: false });
 });

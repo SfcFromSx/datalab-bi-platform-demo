@@ -203,23 +203,52 @@ class CellRuntime:
         target_cell_id: str,
         source_overrides: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        plan = self.build_plan(
-            cells,
-            target_cell_id,
-            source_overrides=source_overrides,
-        )
-        paths = plan.paths_by_id[target_cell_id]
+        prepared_cells = self._prepare_cells(cells, source_overrides)
+        
+        # Find the target cell and its position in the sorted list
+        # We assume the input 'cells' is already sorted or we sort it here to be safe
+        sorted_cells = sorted(prepared_cells, key=lambda c: c.get("position", 0))
+        
+        target_index = -1
+        for i, cell in enumerate(sorted_cells):
+            if cell["id"] == target_cell_id:
+                target_index = i
+                break
+        
+        if target_index == -1:
+            # Fallback to DAG if cell not found in the list (shouldn't happen)
+            plan = self.build_plan(cells, target_cell_id, source_overrides=source_overrides)
+            ancestors = [cell_id for cell_id in plan.plan if cell_id != target_cell_id]
+            dependencies = plan.bundle.dag.get_direct_dependencies(target_cell_id)
+            workspace_dir = str(plan.paths_by_id[target_cell_id].workspace_dir)
+            source_file = str(plan.paths_by_id[target_cell_id].source_file)
+            task_file = str(plan.paths_by_id[target_cell_id].task_file)
+            context_file = str(plan.paths_by_id[target_cell_id].context_file)
+            plan_list = plan.plan
+        else:
+            # Linear ancestors: all cells before the target in the sorted list
+            ancestors = [c["id"] for c in sorted_cells[:target_index]]
+            
+            # Still build the plan to get workspace paths and DAG dependencies
+            plan = self.build_plan(cells, target_cell_id, source_overrides=source_overrides)
+            paths = plan.paths_by_id[target_cell_id]
+            workspace_dir = str(paths.workspace_dir)
+            source_file = str(paths.source_file)
+            task_file = str(paths.task_file)
+            context_file = str(paths.context_file)
+            dependencies = plan.bundle.dag.get_direct_dependencies(target_cell_id)
+            plan_list = plan.plan
+
         return {
             "mode": "stateless-dag-file-ipc",
-            "workspace_dir": str(paths.workspace_dir),
-            "source_file": str(paths.source_file),
-            "task_file": str(paths.task_file),
-            "context_file": str(paths.context_file),
-            "dependencies": plan.bundle.dag.get_direct_dependencies(target_cell_id),
-            "ancestors": [
-                cell_id for cell_id in plan.plan if cell_id != target_cell_id
-            ],
-            "plan": plan.plan,
+            "cell_id": target_cell_id,
+            "workspace_dir": workspace_dir,
+            "source_file": source_file,
+            "task_file": task_file,
+            "context_file": context_file,
+            "dependencies": dependencies,
+            "ancestors": ancestors,
+            "plan": plan_list,
         }
 
     def write_edit_task(

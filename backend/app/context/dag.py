@@ -52,11 +52,26 @@ class CellDependencyDAG:
             position = cell.get("position", 0)
 
             cv = variable_tracker.analyze_cell(cell_id, cell_type, source)
+            defined = set(cv.defined)
+            
+            output = cell.get("output")
+            if isinstance(output, dict):
+                exports = output.get("exports")
+                if isinstance(exports, dict):
+                    defined.update(exports.keys())
+                
+                # Support SQL output variable
+                data = output.get("data")
+                if isinstance(data, dict):
+                    var_name = data.get("variable")
+                    if isinstance(var_name, str) and var_name:
+                        defined.add(var_name)
+
             node = DAGNode(
                 cell_id=cell_id,
                 cell_type=cell_type,
                 position=position,
-                variables_defined=cv.defined,
+                variables_defined=defined,
                 variables_referenced=cv.referenced,
             )
 
@@ -69,7 +84,7 @@ class CellDependencyDAG:
             self._nodes[cell_id] = node
             self._cell_order.append(cell_id)
 
-            for var in sorted(cv.defined):
+            for var in sorted(defined):
                 latest_definitions[var] = cell_id
 
         self._var_to_cell = latest_definitions.copy()

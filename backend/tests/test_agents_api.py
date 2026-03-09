@@ -5,9 +5,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.agents.chat_agent import ChatAgent
+from app.agents.chatbi_agent import ChatBIAgent
 from app.agents.context_builder import build_notebook_query_context
-from app.agents.proxy import ProxyAgent
 from app.api import agents as agents_api
 from app.communication.info_unit import InformationUnit
 from app.models.datasource import DataSource, DataSourceType
@@ -15,71 +14,65 @@ from app.schemas.agent import AgentQueryRequest
 
 
 class FakeSession:
-    def __init__(self, notebooks: dict[str, object]):
+    def __init__(self, notebooks: dict[str, object], datasources: list[DataSource] = None):
         self._notebooks = notebooks
+        self._datasources = datasources or []
 
     async def get(self, _model, notebook_id: str):
         return self._notebooks.get(notebook_id)
+        
+    async def execute(self, statement):
+        class Result:
+            def __init__(self, items): self.items = items
+            def scalars(self): return self
+            def all(self): return self.items
+        return Result(self._datasources)
 
 
 @pytest.mark.asyncio
-async def test_proxy_agent_wraps_chat_messages(monkeypatch) -> None:
-    async def fake_chat_execute(query: str, context):
-        return InformationUnit(content=f"Echo: {query}")
+async def test_chatbi_agent_handles_sql_result(monkeypatch) -> None:
+    async def fake_generate_sql_stream(query, context):
+        yield "SELECT * FROM sales"
+        
+    def fake_execute_isolated(query, tables=None, datasource_ids=None, datasources=None):
+        return {"status": "success", "columns": ["id", "amount"], "rows": [[1, 100]], "row_count": 1}
 
-    monkeypatch.setattr("app.agents.proxy.chat_agent.execute", fake_chat_execute)
+    from app.execution import sql_executor
+    agent = ChatBIAgent()
+    monkeypatch.setattr(agent, "_generate_sql_stream", fake_generate_sql_stream)
+    monkeypatch.setattr(sql_executor, "execute_isolated", fake_execute_isolated)
 
-    result = await ProxyAgent().execute("hello", {"notebook_id": "nb-1"})
+    result = await agent.execute("how many sales", {"notebook_id": "nb-1"})
 
-    assert result.action == "chat_only_response"
-    assert result.content["message"] == "Echo: hello"
-    assert result.content["task_id"]
-
-
-@pytest.mark.asyncio
-async def test_proxy_agent_returns_fallback_message_on_error(monkeypatch) -> None:
-    async def failing_chat_execute(query: str, context):
-        raise RuntimeError("LLM unavailable")
-
-    monkeypatch.setattr("app.agents.proxy.chat_agent.execute", failing_chat_execute)
-
-    result = await ProxyAgent().execute("hello", None)
-
-    assert result.action == "chat_only_response"
-    assert "LLM unavailable" in result.content["message"]
+    assert result.action == "chat_bi_response"
+    assert "SELECT * FROM sales" in result.content["message"]
+    # Table formatting check
+    assert "| id | amount |" in result.content["message"]
+    assert "| 1 | 100 |" in result.content["message"]
 
 
 @pytest.mark.asyncio
-async def test_chat_agent_includes_notebook_context_in_prompt(monkeypatch) -> None:
+async def test_chatbi_agent_includes_notebook_context_in_prompt(monkeypatch) -> None:
     captured_messages: list[dict[str, str]] = []
 
-    async def fake_call_llm(messages, temperature=0.0, max_tokens=4096):
-        captured_messages.extend(messages)
-        return "answer"
+    async def fake_generate_sql_stream(query, context):
+        captured_messages.append({"role": "user", "content": query})
+        yield "SELECT * FROM context"
+        
+    agent = ChatBIAgent()
+    monkeypatch.setattr(agent, "_generate_sql_stream", fake_generate_sql_stream)
 
-    agent = ChatAgent()
-    monkeypatch.setattr(agent, "_call_llm", fake_call_llm)
-
-    result = await agent.execute(
-        "What does this notebook do?",
+    await agent.execute(
+        "query this",
         {
-            "notebook_context": "Cell a (sql)",
-            "table_context": '{"sales_summary": {"columns": ["amount"], "rows": [[1]]}}',
-            "value_context": '{"threshold": 10}',
-            "datasource_context": "Data source: sales (csv)",
-            "cell_context": [{"cell_id": "a", "cell_type": "sql"}],
-            "available_bindings": ["sales_summary", "threshold"],
+            "notebook_context": "Previous results: [1, 2, 3]",
         },
     )
 
-    assert result.content == "answer"
-    assert len(captured_messages) == 2
-    prompt = captured_messages[1]["content"]
-    assert "Notebook context:" in prompt
-    assert "Available tables:" in prompt
-    assert "Available scalar values:" in prompt
-    assert "Focused cell neighborhood:" in prompt
-    assert "Notebook bindings: sales_summary, threshold" in prompt
+    # User prompt
+    assert len(captured_messages) >= 1
+    user_prompt = captured_messages[-1]["content"]
+    assert "Context:\nPrevious results: [1, 2, 3]" in user_prompt
 
 
 def test_build_notebook_query_context_includes_values_and_datasource() -> None:
@@ -149,16 +142,18 @@ async def test_agent_query_returns_completed_response(monkeypatch) -> None:
             "cell_context": [],
             "datasource_context": "",
             "available_bindings": ["threshold"],
+            "raw_tables": {},
+            "datasources": []
         }
 
-    async def fake_proxy_execute(query: str, context):
+    async def fake_chatbi_execute(query: str, context):
         captured_context.update(context)
         return InformationUnit(
-            content={"task_id": "task-123", "message": f"Handled: {query}"}
+            content={"task_id": "task-123", "message": f"Handled: {query}", "results": []}
         )
 
     monkeypatch.setattr(agents_api, "load_notebook_query_context", fake_load_context)
-    monkeypatch.setattr(agents_api.proxy_agent, "execute", fake_proxy_execute)
+    monkeypatch.setattr(agents_api.chatbi_agent, "execute", fake_chatbi_execute)
 
     response = await agents_api.agent_query(
         AgentQueryRequest(query="hello", notebook_id="nb-1"),
@@ -185,7 +180,7 @@ async def test_agent_query_raises_not_found_for_missing_notebook() -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_query_returns_error_response_when_proxy_fails(monkeypatch) -> None:
+async def test_agent_query_returns_error_response_when_agent_fails(monkeypatch) -> None:
     async def fake_load_context(
         session,
         notebook_id,
@@ -195,11 +190,11 @@ async def test_agent_query_returns_error_response_when_proxy_fails(monkeypatch) 
     ):
         return {}
 
-    async def failing_proxy_execute(query: str, context):
-        raise RuntimeError("proxy failed")
+    async def failing_agent_execute(query: str, context):
+        raise RuntimeError("agent failed")
 
     monkeypatch.setattr(agents_api, "load_notebook_query_context", fake_load_context)
-    monkeypatch.setattr(agents_api.proxy_agent, "execute", failing_proxy_execute)
+    monkeypatch.setattr(agents_api.chatbi_agent, "execute", failing_agent_execute)
 
     response = await agents_api.agent_query(
         AgentQueryRequest(query="hello", notebook_id="nb-1"),
@@ -207,5 +202,39 @@ async def test_agent_query_returns_error_response_when_proxy_fails(monkeypatch) 
     )
 
     assert response.status == "error"
-    assert response.message == "proxy failed"
+    assert response.message == "agent failed"
     assert response.task_id
+
+
+@pytest.mark.asyncio
+async def test_chatbi_agent_uses_isolated_execution_with_context(monkeypatch) -> None:
+    from app.execution.sql_executor import sql_executor
+    
+    async def fake_generate_sql_stream(query, context):
+        yield "SELECT * FROM test"
+
+    captured_params = {}
+    
+    def fake_execute_isolated(query, tables=None, datasource_ids=None, datasources=None):
+        captured_params["tables"] = tables
+        captured_params["datasources"] = datasources
+        return {"status": "success", "columns": ["a"], "rows": [[1]], "row_count": 1}
+
+    monkeypatch.setattr(sql_executor, "execute_isolated", fake_execute_isolated)
+
+    agent = ChatBIAgent()
+    monkeypatch.setattr(agent, "_generate_sql_stream", fake_generate_sql_stream)
+
+    ds = DataSource(id="ds-1", name="test_ds", ds_type=DataSourceType.CSV, connection_string="")
+    raw_tables = {"prev_cell": {"columns": ["x"], "rows": [[1]]}}
+    
+    result = await agent.execute("test query", {
+        "datasource": ds, 
+        "datasource_id": "ds-1", 
+        "datasources": [ds], 
+        "raw_tables": raw_tables
+    })
+    
+    assert captured_params["tables"] == raw_tables
+    assert len(captured_params["datasources"]) == 1
+    assert captured_params["datasources"][0].id == "ds-1"

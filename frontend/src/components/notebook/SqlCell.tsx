@@ -23,26 +23,25 @@ export default function SqlCell({ cell, onChange }: Props) {
       </div>
 
       {output && (
-        <div className="p-3">
-          {output.error && (
-            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-red-700 dark:text-red-300 text-sm font-mono">
-              {output.error}
-            </div>
-          )}
+        <details open className="border-t border-gray-100 dark:border-gray-800">
+          <summary className="px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800">
+            {output.row_count !== undefined ? `SQL Result (${output.row_count} rows)` : 'SQL Result'}
+          </summary>
+          <div className="p-3">
+            {output.error && (
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-red-700 dark:text-red-300 text-sm font-mono">
+                {output.error}
+              </div>
+            )}
 
-          {hasResult && (
-            <DataTable
-              columns={output.columns || output.data?.columns || []}
-              rows={output.rows || output.data?.rows || []}
-            />
-          )}
-
-          {output.row_count !== undefined && (
-            <div className="mt-2 text-xs text-gray-500">
-              {output.row_count} rows returned
-            </div>
-          )}
-        </div>
+            {hasResult && (
+              <DataTable
+                columns={output.columns || output.data?.columns || []}
+                rows={output.rows || output.data?.rows || []}
+              />
+            )}
+          </div>
+        </details>
       )}
     </div>
   );
