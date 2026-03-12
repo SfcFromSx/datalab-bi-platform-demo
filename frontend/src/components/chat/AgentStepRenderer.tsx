@@ -72,13 +72,15 @@ export function AgentProgressStep({ step }: { step: ChatStep }) {
 
 export function SummaryStep({ step }: { step: ChatStep }) {
   return (
-    <div className="my-2">
-      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
-        <FileText size={11} />
+    <div className="mt-4 mb-2">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 mb-2">
+        <FileText size={14} />
         <span>Analysis Summary</span>
       </div>
-      <div className="text-sm text-gray-700 dark:text-gray-200 prose dark:prose-invert prose-sm max-w-none">
-        <ReactMarkdown>{step.content as string}</ReactMarkdown>
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm">
+        <div className="text-gray-800 dark:text-gray-200 prose prose-blue dark:prose-invert prose-sm max-w-none prose-table:w-auto prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-2 prose-tr:border-b prose-tr:border-gray-200 dark:prose-tr:border-gray-800 prose-blockquote:border-l-blue-500">
+          <ReactMarkdown>{step.content as string}</ReactMarkdown>
+        </div>
       </div>
     </div>
   );

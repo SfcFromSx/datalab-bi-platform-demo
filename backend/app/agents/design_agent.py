@@ -74,9 +74,9 @@ class DesignAgent(BaseAgent):
         ]
 
         try:
-            result = await self._call_llm_json(messages)
+            result = await self._call_llm_json(messages, log_meta={"feature": "design"})
         except Exception:
-            raw = await self._call_llm(messages)
+            raw = await self._call_llm(messages, log_meta={"feature": "design"})
             raw = raw.strip()
             if raw.startswith("```"):
                 lines = raw.split("\n")

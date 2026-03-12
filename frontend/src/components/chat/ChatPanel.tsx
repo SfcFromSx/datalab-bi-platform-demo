@@ -145,7 +145,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
       <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0">
         <Bot size={14} className="text-white" />
       </div>
-      <div className="max-w-[85%] px-3 py-2 rounded-lg rounded-bl-sm bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 overflow-x-auto">
+      <div className={`px-3 py-2 rounded-lg rounded-bl-sm bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200 overflow-x-auto ${msg.steps.length > 0 ? "w-full max-w-full" : "max-w-[85%]"}`}>
         {msg.steps.length > 0 ? (
           <div className="space-y-1">
             {msg.steps.map((step, i) => (

@@ -334,8 +334,22 @@ async function _handleStep(
     steps.push({ type: 'thinking', content: step.content as string, streaming: true });
   } else if (step.type === 'executing') {
     steps.push({ type: 'executing', content: step.content as string, streaming: true });
+  } else if (step.type === 'plan') {
+    const existing = steps.findIndex((s) => s.type === 'plan');
+    if (existing >= 0) {
+      steps[existing] = { type: 'plan', content: step.content as any, streaming: false };
+    } else {
+      steps.push({ type: 'plan', content: step.content as any, streaming: false });
+    }
+  } else if (step.type === 'agent_progress') {
+    const existing = steps.findIndex((s) => s.type === 'agent_progress');
+    if (existing >= 0) {
+      steps[existing] = { type: 'agent_progress', content: step.content as any, streaming: false };
+    } else {
+      steps.push({ type: 'agent_progress', content: step.content as any, streaming: false });
+    }
   } else {
-    // Other types (data, answer, agent_progress, etc.)
+    // Other types (data, answer, etc.)
     steps.push({
       type: step.type as ChatStep['type'],
       content: step.content as any,

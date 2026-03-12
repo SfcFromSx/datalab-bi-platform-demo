@@ -52,6 +52,7 @@ function formatTime(iso: string) {
 
 function TaskCard({ task }: { task: AgentTask }) {
   const { cancelTask } = useAgentTaskStore();
+  const [expandedSteps, setExpandedSteps] = useState<number[]>([]);
   const canCancel = task.status === 'pending' || task.status === 'running';
 
   return (
@@ -84,16 +85,78 @@ function TaskCard({ task }: { task: AgentTask }) {
       )}
 
       {task.plan && task.plan.length > 0 && (
-        <div className="mb-3 text-xs space-y-0.5">
+        <div className="mb-3 text-xs space-y-2">
           {task.plan.map((step, i) => {
             const done = step.status === 'completed';
             const running = step.status === 'running';
+            const failed = step.status === 'failed';
+            const hasDetails = step.source || step.error || step.duration_ms !== undefined;
+            const isExpanded = expandedSteps.includes(i);
+
             return (
-              <div key={i} className={`flex items-center gap-1.5 ${done ? 'text-gray-400' : 'text-gray-600 dark:text-gray-300'}`}>
-                {done ? <CheckCircle2 size={11} className="text-green-500" /> :
-                 running ? <Loader2 size={11} className="text-blue-500 animate-spin" /> :
-                 <Clock size={11} className="text-gray-400" />}
-                <span className={done ? 'line-through' : ''}>{step.description}</span>
+              <div key={i} className="flex flex-col">
+                <div 
+                  className={`flex items-center justify-between p-1.5 rounded-md ${hasDetails ? 'hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer' : ''}`}
+                  onClick={() => {
+                    if (!hasDetails) return;
+                    setExpandedSteps(prev => 
+                      prev.includes(i) ? prev.filter(idx => idx !== i) : [...prev, i]
+                    );
+                  }}
+                >
+                  <div className={`flex items-center gap-1.5 ${done ? 'text-gray-500' : failed ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                    {done ? <CheckCircle2 size={13} className="text-green-500" /> :
+                     running ? <Loader2 size={13} className="text-blue-500 animate-spin" /> :
+                     failed ? <XCircle size={13} className="text-red-500" /> :
+                     <Clock size={13} className="text-gray-400" />}
+                    <span className="font-medium">{step.index + 1}. {step.description}</span>
+                  </div>
+                  {hasDetails && (
+                    <span className="text-gray-400">
+                      {isExpanded ? '▼' : '▶'}
+                    </span>
+                  )}
+                </div>
+
+                {isExpanded && hasDetails && (
+                  <div className="ml-5 mt-1 p-2 bg-gray-50 dark:bg-gray-800/50 rounded-md border border-gray-100 dark:border-gray-800 space-y-2">
+                    {step.duration_ms !== undefined && (
+                      <div className="flex items-center gap-1 text-[10px] text-gray-500 uppercase tracking-wider font-semibold">
+                        <Clock size={10} />
+                        Execution Time: {step.duration_ms < 1000 ? `${step.duration_ms}ms` : `${(step.duration_ms / 1000).toFixed(2)}s`}
+                      </div>
+                    )}
+                    
+                    {step.source && (
+                      <div>
+                        <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-1">Generated Code</div>
+                        <pre className="text-[10px] p-2 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded overflow-x-auto text-blue-600 dark:text-blue-400 font-mono">
+                          <code>{step.source}</code>
+                        </pre>
+                      </div>
+                    )}
+
+                    {step.output_summary && (
+                      <div>
+                        <div className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-1">Output Summary</div>
+                        <div className="text-[11px] text-gray-600 dark:text-gray-300">
+                          {step.output_summary}
+                        </div>
+                      </div>
+                    )}
+
+                    {step.error && (
+                      <div>
+                        <div className="text-[10px] text-red-500 uppercase tracking-wider font-semibold mb-1 flex items-center gap-1">
+                          <Ban size={10} /> Error Trace
+                        </div>
+                        <pre className="text-[10px] p-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded overflow-x-auto text-red-600 dark:text-red-400 font-mono whitespace-pre-wrap">
+                          {step.error}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

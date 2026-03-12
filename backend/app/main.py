@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import agent_tasks, cells, chat, datasources, folders, knowledge, models, notebooks, websocket
+from app.api import agent_tasks, cells, chat, datasources, folders, knowledge, llm_logs, models, notebooks, websocket
 from app.config import settings
 from app.database import init_db
 
@@ -57,6 +57,7 @@ app.include_router(chat.router, prefix="/api")
 app.include_router(knowledge.router, prefix="/api")
 app.include_router(datasources.router, prefix="/api")
 app.include_router(agent_tasks.router, prefix="/api")
+app.include_router(llm_logs.router, prefix="/api")
 app.include_router(models.router, prefix="/api")
 app.include_router(websocket.router)
 

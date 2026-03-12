@@ -1,4 +1,4 @@
-import { Globe, Menu, Moon, Sun, Cpu } from 'lucide-react';
+import { Globe, Menu, Moon, Sun, Cpu, History } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useUIStore } from '../../stores/uiStore';
@@ -41,6 +41,14 @@ export default function Header() {
         >
           <Cpu className="h-4 w-4" />
           <span className="hidden sm:inline">{t('agents.nav', 'Agents')}</span>
+        </Link>
+        <Link
+          to="/history"
+          className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
+          title={t('history.title', 'Process History')}
+        >
+          <History className="h-4 w-4" />
+          <span className="hidden sm:inline">{t('history.nav', 'History')}</span>
         </Link>
 
         <button

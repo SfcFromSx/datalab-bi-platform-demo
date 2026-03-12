@@ -12,6 +12,24 @@ from app.notebook_runtime import (
     build_query_context,
     build_runtime_bundle,
 )
+from app.execution import sql_executor
+
+
+def _build_database_schema(datasource: DataSource | None) -> str:
+    datasource_id = datasource.id if datasource else None
+    tables = sql_executor.get_tables(datasource_id)
+    schema_parts = []
+    
+    for table in tables:
+        schema_info = sql_executor.get_schema(table, datasource_id)
+        if schema_info:
+            cols = [f"  {col['column_name']} {col['column_type']}" for col in schema_info]
+            schema_parts.append(f"Table: {table}\n" + "\n".join(cols))
+            
+    if not schema_parts and datasource and datasource.metadata_ and "schema" in datasource.metadata_:
+        schema_parts.append(str(datasource.metadata_["schema"]))
+        
+    return "\n\n".join(schema_parts)
 
 
 def build_notebook_query_context(
@@ -62,6 +80,7 @@ def build_notebook_query_context(
         "datasource_id": datasource.id if datasource else None,
         "raw_tables": json.loads(query_context["table_context"]),
         "available_bindings": bindings,
+        "schema": _build_database_schema(datasource),
     }
 
 

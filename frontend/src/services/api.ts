@@ -207,4 +207,15 @@ export const setActiveModel = (id: string) =>
 
 export const healthCheck = () => api.get('/health').then((r) => r.data);
 
+// --- LLM Logs API ---
+export const listLLMLogs = (params?: { feature?: string; status?: string; limit?: number; offset?: number }) =>
+  api.get<{ logs: import('../types').LLMLog[]; total: number }>('/llm-logs', { params })
+    .then((r) => r.data);
+
+export const getLLMLog = (id: string) =>
+  api.get<import('../types').LLMLog>(`/llm-logs/${id}`).then((r) => r.data);
+
+export const getLLMLogStats = () =>
+  api.get<import('../types').LLMLogStats>('/llm-logs/stats').then((r) => r.data);
+
 export default api;

@@ -10,6 +10,7 @@ from typing import Any, AsyncGenerator, Optional
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.agents.base import BaseAgent
 from app.execution import sql_executor
@@ -55,8 +56,9 @@ class AutoAnalysisAgent(BaseAgent):
         session: AsyncSession,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Run a full autonomous analysis, yielding SSE step dicts."""
+        task = await session.get(AgentTask, task.id)
         task.status = AgentTaskStatus.RUNNING.value
-        await session.flush()
+        await session.commit()
 
         yield {"type": "thinking", "content": "Planning analysis approach..."}
 
@@ -68,7 +70,7 @@ class AutoAnalysisAgent(BaseAgent):
             logger.error(f"Plan generation failed: {e}")
             task.status = AgentTaskStatus.FAILED.value
             task.error = str(e)
-            await session.flush()
+            await session.commit()
             yield {"type": "error", "content": f"Failed to generate plan: {e}"}
             return
 
@@ -80,7 +82,7 @@ class AutoAnalysisAgent(BaseAgent):
             for s in plan_steps
         ]
         task.progress = 0.1
-        await session.flush()
+        await session.commit()
 
         yield {
             "type": "plan",
@@ -91,10 +93,18 @@ class AutoAnalysisAgent(BaseAgent):
         results_context: list[str] = []
 
         for i, step in enumerate(plan_steps):
+            task = await session.get(AgentTask, task.id)
+            if not task:
+                break
+            if task.status == AgentTaskStatus.CANCELLED.value:
+                yield {"type": "error", "content": "Analysis cancelled by user."}
+                return
+
             step_progress = 0.1 + (0.8 * i / max(total, 1))
             task.progress = step_progress
             task.plan[i]["status"] = "running"
-            await session.flush()
+            flag_modified(task, "plan")  # trigger JSON mutation detection
+            await session.commit()
 
             yield {
                 "type": "plan",
@@ -112,6 +122,7 @@ class AutoAnalysisAgent(BaseAgent):
 
             cell_type = step.get("cell_type", "sql")
             source = step.get("source", "")
+            start_time = time.time()
 
             try:
                 cell = await self._create_and_execute_cell(
@@ -124,28 +135,51 @@ class AutoAnalysisAgent(BaseAgent):
                     task.queries_executed += 1
 
                 output = cell.output or {}
-                if output.get("data"):
+                cols, rows = [], []
+
+                if "data" in output and isinstance(output["data"], dict):
                     cols = output["data"].get("columns", [])
                     rows = output["data"].get("rows", [])
+                elif "columns" in output and "rows" in output:
+                    cols = output.get("columns", [])
+                    rows = output.get("rows", [])
+                    
+                output_summary = None
+                if cols or rows:
                     preview = rows[:5]
                     results_context.append(
                         f"Step {i + 1} ({step['description']}): "
                         f"columns={cols}, rows={len(rows)}, sample={preview}"
                     )
+                    output_summary = f"Returned {len(rows)} rows, {len(cols)} columns"
+                elif output.get("chart"):
+                    output_summary = "Generated chart specification"
+                
+                task.plan[i]["source"] = source
+                task.plan[i]["duration_ms"] = int((time.time() - start_time) * 1000)
+                if output_summary:
+                    task.plan[i]["output_summary"] = output_summary
+                    
             except Exception as e:
                 logger.error(f"Step {i} failed: {e}")
                 task.plan[i]["status"] = "failed"
+                task.plan[i]["source"] = source
+                task.plan[i]["duration_ms"] = int((time.time() - start_time) * 1000)
+                task.plan[i]["error"] = str(e)
                 results_context.append(f"Step {i + 1}: FAILED - {e}")
 
-            await session.flush()
+            flag_modified(task, "plan")  # force SQLAlchemy JSON mutation detection
+            await session.commit()
 
             yield {
                 "type": "plan",
                 "content": task.plan,
             }
 
-        task.progress = 0.9
-        await session.flush()
+        task = await session.get(AgentTask, task.id)
+        if task:
+            task.progress = 0.9
+            await session.commit()
 
         yield {
             "type": "agent_progress",
@@ -167,13 +201,16 @@ class AutoAnalysisAgent(BaseAgent):
                 position=1000 + total,
             )
             session.add(md_cell)
-            await session.flush()
-            task.cells_created += 1
+            await session.commit()
+            task = await session.get(AgentTask, task.id)
+            if task:
+                task.cells_created += 1
 
-        task.status = AgentTaskStatus.COMPLETED.value
-        task.progress = 1.0
-        task.result = {"summary": summary}
-        await session.flush()
+        if task:
+            task.status = AgentTaskStatus.COMPLETED.value
+            task.progress = 1.0
+            task.result = {"summary": summary}
+            await session.commit()
 
         yield {"type": "summary", "content": summary}
 
@@ -201,7 +238,7 @@ class AutoAnalysisAgent(BaseAgent):
             {"role": "system", "content": _PLAN_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ]
-        return await self._call_llm_json(messages)
+        return await self._call_llm_json(messages, log_meta={"feature": "agent"})
 
     async def _create_and_execute_cell(
         self,
@@ -214,7 +251,7 @@ class AutoAnalysisAgent(BaseAgent):
         if not task.notebook_id:
             notebook = Notebook(title=f"Agent Analysis: {task.query[:50]}")
             session.add(notebook)
-            await session.flush()
+            await session.commit()
             task.notebook_id = notebook.id
 
         ct = CellType(cell_type) if cell_type in CellType.__members__.values() else CellType.SQL
@@ -225,7 +262,7 @@ class AutoAnalysisAgent(BaseAgent):
             position=1000 + step_index,
         )
         session.add(cell)
-        await session.flush()
+        await session.commit()
 
         notebook_cells_result = await session.execute(
             select(Cell)
@@ -251,7 +288,7 @@ class AutoAnalysisAgent(BaseAgent):
         except Exception as e:
             cell.output = {"status": "error", "error": str(e)}
 
-        await session.flush()
+        await session.commit()
         return cell
 
     async def _generate_summary(
@@ -266,7 +303,7 @@ class AutoAnalysisAgent(BaseAgent):
             {"role": "system", "content": _SUMMARY_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ]
-        return await self._call_llm(messages)
+        return await self._call_llm(messages, log_meta={"feature": "agent"})
 
     async def execute(self, query, context=None):
         from app.communication.info_unit import InformationUnit

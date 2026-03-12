@@ -132,7 +132,7 @@ class ChatBIAgent(BaseAgent):
             dsl=ctx.get("dsl", ""),
         )
         messages = [self._system_message(), {"role": "user", "content": prompt}]
-        async for chunk in llm_client.stream(messages):
+        async for chunk in llm_client.stream(messages, log_meta={"feature": "chat"}):
             yield chunk
 
     async def _generate_chart(
@@ -153,9 +153,9 @@ class ChatBIAgent(BaseAgent):
         )
         messages = [self._system_message(), {"role": "user", "content": prompt}]
         try:
-            return await self._call_llm_json(messages)
+            return await self._call_llm_json(messages, log_meta={"feature": "chat"})
         except Exception:
-            raw = await self._call_llm(messages)
+            raw = await self._call_llm(messages, log_meta={"feature": "chat"})
             return json.loads(_strip_sql_fences(raw))
 
 

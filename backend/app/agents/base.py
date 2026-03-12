@@ -57,11 +57,13 @@ class BaseAgent(ABC):
         messages: list[dict[str, str]],
         temperature: float = 0.0,
         max_tokens: int = 4096,
+        log_meta: Optional[dict[str, str]] = None,
     ) -> str:
         for attempt in range(self.max_retries):
             try:
                 return await self.llm.complete(
-                    messages, temperature=temperature, max_tokens=max_tokens
+                    messages, temperature=temperature, max_tokens=max_tokens,
+                    log_meta=log_meta,
                 )
             except Exception as e:
                 logger.warning(f"{self.agent_role} LLM call attempt {attempt + 1} failed: {e}")
@@ -73,10 +75,14 @@ class BaseAgent(ABC):
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.0,
+        log_meta: Optional[dict[str, str]] = None,
     ) -> dict:
         for attempt in range(self.max_retries):
             try:
-                return await self.llm.complete_json(messages, temperature=temperature)
+                return await self.llm.complete_json(
+                    messages, temperature=temperature,
+                    log_meta=log_meta,
+                )
             except Exception as e:
                 logger.warning(
                     f"{self.agent_role} JSON LLM call attempt {attempt + 1} failed: {e}"

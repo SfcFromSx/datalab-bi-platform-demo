@@ -18,6 +18,11 @@ from app.schemas.knowledge import (
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
 )
+from app.schemas.llm_log import (
+    LLMLogListResponse,
+    LLMLogResponse,
+    LLMLogStatsResponse,
+)
 from app.schemas.notebook import (
     NotebookCreate,
     NotebookListResponse,
@@ -30,6 +35,9 @@ __all__ = [
     "AgentTaskListResponse",
     "AgentTaskPlanStep",
     "AgentTaskResponse",
+    "LLMLogListResponse",
+    "LLMLogResponse",
+    "LLMLogStatsResponse",
     "NotebookCreate",
     "NotebookUpdate",
     "NotebookResponse",

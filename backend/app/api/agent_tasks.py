@@ -37,7 +37,7 @@ async def create_agent_task(
         status=AgentTaskStatus.PENDING.value,
     )
     session.add(task)
-    await session.flush()
+    await session.commit()
     await session.refresh(task)
 
     async def event_generator():

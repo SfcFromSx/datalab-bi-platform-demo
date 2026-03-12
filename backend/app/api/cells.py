@@ -285,6 +285,7 @@ async def edit_cell_with_ai(
                 messages=messages,
                 temperature=0.1,
                 max_tokens=4096,
+                log_meta={"feature": "ai_edit", "cell_id": cell_id},
             ):
                 chunks.append(chunk)
                 chunk_count += 1

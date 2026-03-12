@@ -35,7 +35,7 @@ class PythonAgent(BaseAgent):
         )
 
         messages = [self._system_message(), {"role": "user", "content": prompt}]
-        code = await self._call_llm(messages)
+        code = await self._call_llm(messages, log_meta={"feature": "python_agent"})
 
         code = code.strip()
         if code.startswith("```"):

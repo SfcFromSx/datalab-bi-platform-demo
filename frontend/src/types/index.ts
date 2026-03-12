@@ -169,6 +169,10 @@ export interface AgentTaskPlanStep {
   description: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
   cell_id?: string;
+  source?: string;
+  duration_ms?: number;
+  output_summary?: string;
+  error?: string;
 }
 
 export interface AgentTask {
@@ -211,5 +215,32 @@ export interface ChartConfig {
   yAxis?: string;
   series?: unknown[];
   option?: Record<string, unknown>;
+}
+
+export interface LLMLog {
+  id: string;
+  feature: string;
+  model: string;
+  messages: Array<Record<string, unknown>> | null;
+  response: string | null;
+  tokens_prompt: number;
+  tokens_completion: number;
+  duration_ms: number;
+  status: 'success' | 'error';
+  error: string | null;
+  cell_id: string | null;
+  notebook_id: string | null;
+  created_at: string;
+}
+
+export interface LLMLogStats {
+  total_calls: number;
+  success_count: number;
+  error_count: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  avg_duration_ms: number;
+  by_feature: Record<string, number>;
+  by_model: Record<string, number>;
 }
 
