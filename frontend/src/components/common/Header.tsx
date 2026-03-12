@@ -1,6 +1,8 @@
-import { Globe, Menu, Moon, Sun } from 'lucide-react';
+import { Globe, Menu, Moon, Sun, Cpu } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { useUIStore } from '../../stores/uiStore';
+import ModelSelector from '../chat/ModelSelector';
 
 export default function Header() {
   const { t } = useTranslation();
@@ -29,6 +31,17 @@ export default function Header() {
       </div>
 
       <div className="flex items-center gap-2">
+        <div className="hidden sm:block" title={t('chat.modelForChatAndEdit', 'Model for Chat & AI Edit')}>
+          <ModelSelector compact />
+        </div>
+        <Link
+          to="/agents"
+          className="flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 transition-colors"
+          title={t('agents.title', 'Agent Tasks')}
+        >
+          <Cpu className="h-4 w-4" />
+          <span className="hidden sm:inline">{t('agents.nav', 'Agents')}</span>
+        </Link>
 
         <button
           type="button"

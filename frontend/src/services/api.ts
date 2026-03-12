@@ -1,6 +1,5 @@
 import axios, { AxiosHeaders } from 'axios';
 import type {
-  AgentQueryResponse,
   Cell,
   CellAgentRuntimeInfo,
   CellExecuteResult,
@@ -168,11 +167,6 @@ export const executeCell = (cellId: string, source?: string) =>
     `/cells/${cellId}/execute`, source ? { source } : {}
   ).then((r) => r.data);
 
-export const agentQuery = (query: string, notebookId: string, datasourceId?: string) =>
-  api.post<AgentQueryResponse>('/agents/query', {
-    query, notebook_id: notebookId, datasource_id: datasourceId,
-  }).then((r) => r.data);
-
 export const listDataSources = () =>
   api.get<DataSource[]>('/datasources').then((r) => r.data);
 
@@ -189,6 +183,26 @@ export const getDataSourceSchema = (id: string) =>
 
 export const searchKnowledge = (query: string, datasourceId?: string) =>
   api.get('/knowledge/search', { params: { query, datasource_id: datasourceId } })
+    .then((r) => r.data);
+
+// --- Agent Tasks API ---
+export const listAgentTasks = (params?: { status?: string; limit?: number; offset?: number }) =>
+  api.get<{ tasks: import('../types').AgentTask[]; total: number }>('/agent-tasks', { params })
+    .then((r) => r.data);
+
+export const getAgentTask = (taskId: string) =>
+  api.get<import('../types').AgentTask>(`/agent-tasks/${taskId}`).then((r) => r.data);
+
+export const cancelAgentTask = (taskId: string) =>
+  api.post<import('../types').AgentTask>(`/agent-tasks/${taskId}/cancel`).then((r) => r.data);
+
+// --- Models API ---
+export const listModels = () =>
+  api.get<{ models: import('../types').ModelInfo[]; active_id: string }>('/models')
+    .then((r) => r.data);
+
+export const setActiveModel = (id: string) =>
+  api.post<{ models: import('../types').ModelInfo[]; active_id: string }>('/models/active', { id })
     .then((r) => r.data);
 
 export const healthCheck = () => api.get('/health').then((r) => r.data);

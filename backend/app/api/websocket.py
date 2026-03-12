@@ -1,22 +1,17 @@
-"""WebSocket handler for real-time notebook updates."""
+"""WebSocket handler for real-time notebook cell execution."""
 
 from __future__ import annotations
 
 import json
 import logging
-import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from app.agents import chatbi_agent
-from app.agents.context_builder import load_notebook_query_context
-from app.config import settings
 from app.database import async_session_factory
 from app.execution.cell_runtime import CellRuntime
 from app.models import Cell, DataSource, Notebook
-from app.models.cell import CellType
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +76,6 @@ async def websocket_endpoint(websocket: WebSocket, notebook_id: str):
 
             if msg_type == "cell_execute":
                 await _handle_cell_execute(websocket, notebook_id, message)
-            elif msg_type == "agent_query":
-                await _handle_agent_query(websocket, notebook_id, message)
             elif msg_type == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
             else:
@@ -155,82 +148,5 @@ async def _handle_cell_execute(
                 "cell_id": cell_id,
                 "status": "error",
                 "output": {"status": "error", "error": str(e)},
-            },
-        })
-
-
-async def _handle_agent_query(
-    websocket: WebSocket, notebook_id: str, message: dict
-):
-    payload = message.get("payload", {})
-    query = payload.get("query", "")
-    datasource_id = payload.get("datasource_id")
-    cell_id = payload.get("cell_id")
-    task_id = str(uuid.uuid4())
-
-    try:
-        await websocket.send_text(json.dumps({
-            "type": "agent_progress",
-            "payload": {
-                "task_id": task_id,
-                "status": "running",
-                "message": "Thinking...",
-            },
-        }))
-
-        async with async_session_factory() as session:
-            agent_context = await load_notebook_query_context(
-                session,
-                notebook_id,
-                query,
-                focus_cell_id=cell_id,
-                datasource_id=datasource_id,
-            )
-
-        final_message = ""
-        async for update in chatbi_agent.execute_stream(query, agent_context):
-            msg_content = ""
-            data_content = None
-            chart_content = None
-            sections_content = []
-            
-            if isinstance(update, dict):
-                msg_content = update.get("message", "")
-                data_content = update.get("data")
-                chart_content = update.get("chart")
-                sections_content = update.get("sections", [])
-            else:
-                msg_content = update
-                
-            final_message = msg_content
-            
-            await manager.broadcast(notebook_id, {
-                "type": "agent_progress",
-                "payload": {
-                    "task_id": task_id,
-                    "status": "running",
-                    "message": msg_content,
-                    "data": data_content,
-                    "chart": chart_content,
-                    "sections": sections_content,
-                },
-            })
-
-        await manager.broadcast(notebook_id, {
-            "type": "agent_complete",
-            "payload": {
-                "task_id": task_id,
-                "status": "completed",
-                "cells_created": [],
-                "message": final_message,
-            },
-        })
-    except Exception as e:
-        await manager.broadcast(notebook_id, {
-            "type": "agent_progress",
-            "payload": {
-                "task_id": task_id,
-                "status": "error",
-                "message": str(e),
             },
         })

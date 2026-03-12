@@ -22,14 +22,37 @@
     "markdown": "Markdown",
     "running": "运行中...",
     "success": "成功",
-    "error": "错误"
+    "error": "错误",
+    "usingModel": "使用模型",
+    "switchModelInHeader": "在顶部栏切换"
   },
   "chat": {
     "title": "AI 助手",
     "placeholder": "问一个关于数据的问题...",
+    "placeholder.design": "描述要在笔记本中添加或修改的内容...",
+    "placeholder.agent": "描述你希望智能体执行的分析任务...",
     "send": "发送",
     "thinking": "思考中...",
-    "welcome": "你好！我是你的 BI 助手。可以帮你查询数据、创建可视化图表或分析数据模式。"
+    "welcome": "你好！我是你的 BI 助手。可以帮你查询数据、创建可视化图表或分析数据模式。",
+    "welcome.chat": "你好！我是你的 BI 助手。可以帮你查询数据、创建可视化图表或分析数据模式。",
+    "welcome.design": "我可以帮你设计笔记本。告诉我要添加、编辑或重新排列哪些单元格。",
+    "welcome.agent": "我将自主分析你的数据。描述你想要调查的内容，我会创建完整的分析。",
+    "clearHistory": "清除历史",
+    "designNeedsNotebook": "请先打开一个笔记本以使用设计模式",
+    "modelForChatAndEdit": "对话与 AI 编辑所用模型",
+    "mode": {
+      "chat": "对话",
+      "design": "设计",
+      "agent": "智能体"
+    }
+  },
+  "agents": {
+    "nav": "智能体",
+    "title": "智能体任务",
+    "subtitle": "监控和管理自主分析任务",
+    "running": "运行中的任务",
+    "history": "任务历史",
+    "noTasks": "暂无智能体任务"
   },
   "sidebar": {
     "notebooks": "笔记本列表",

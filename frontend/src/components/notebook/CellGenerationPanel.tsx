@@ -1,5 +1,7 @@
 import { CheckCircle2, ChevronDown, ChevronUp, LoaderCircle, MessageSquare, Sparkles, X, XCircle } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useModelUIStore } from '../../stores/modelUIStore';
 import type { CellAIState } from '../../types';
 
 interface Props {
@@ -41,6 +43,8 @@ function getStageSpecificInfo(stage: string, details?: any): Record<string, any>
 }
 
 export default function CellGenerationPanel({ state, onClose, onClear }: Props) {
+  const { t } = useTranslation();
+  const activeModelName = useModelUIStore((s) => s.activeModelName);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [showDetails, setShowDetails] = useState(true);
   const [showDraft, setShowDraft] = useState(true);
@@ -92,6 +96,14 @@ export default function CellGenerationPanel({ state, onClose, onClear }: Props) 
               style={{ width: `${Math.max(4, state.progress * 100)}%` }}
             />
           </div>
+
+          {activeModelName && (
+            <p className="mt-2 text-[10px] text-gray-500 dark:text-gray-400">
+              {t('cell.usingModel', 'Using model')}: <span className="font-medium text-indigo-600 dark:text-indigo-400">{activeModelName}</span>
+              {' · '}
+              <span className="italic">{t('cell.switchModelInHeader', 'Switch in header')}</span>
+            </p>
+          )}
 
           {state.prompt && (
             <div className="mt-4 p-3 bg-indigo-50/50 dark:bg-indigo-900/10 border border-indigo-100/50 dark:border-indigo-800/30 rounded-xl">

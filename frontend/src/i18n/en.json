@@ -22,14 +22,37 @@
     "markdown": "Markdown",
     "running": "Running...",
     "success": "Success",
-    "error": "Error"
+    "error": "Error",
+    "usingModel": "Using model",
+    "switchModelInHeader": "Switch in header"
   },
   "chat": {
     "title": "AI Assistant",
     "placeholder": "Ask a question about your data...",
+    "placeholder.design": "Describe what to add or change in the notebook...",
+    "placeholder.agent": "Describe the analysis you want the agent to perform...",
     "send": "Send",
     "thinking": "Thinking...",
-    "welcome": "Hi! I'm your BI assistant. Ask me to query data, create visualizations, or analyze patterns."
+    "welcome": "Hi! I'm your BI assistant. Ask me to query data, create visualizations, or analyze patterns.",
+    "welcome.chat": "Hi! I'm your BI assistant. Ask me to query data, create visualizations, or analyze patterns.",
+    "welcome.design": "I can help design your notebook. Tell me what cells to add, edit, or rearrange.",
+    "welcome.agent": "I'll autonomously analyze your data. Describe what you want to investigate and I'll create a full analysis.",
+    "clearHistory": "Clear History",
+    "designNeedsNotebook": "Open a notebook to use Design mode",
+    "modelForChatAndEdit": "Model for Chat & AI Edit",
+    "mode": {
+      "chat": "Chat",
+      "design": "Design",
+      "agent": "Agent"
+    }
+  },
+  "agents": {
+    "nav": "Agents",
+    "title": "Agent Tasks",
+    "subtitle": "Monitor and manage autonomous analysis tasks",
+    "running": "Running Tasks",
+    "history": "Task History",
+    "noTasks": "No agent tasks yet"
   },
   "sidebar": {
     "notebooks": "Notebooks",

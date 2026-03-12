@@ -1,4 +1,9 @@
-from app.schemas.agent import AgentProgressMessage, AgentQueryRequest, AgentQueryResponse
+from app.schemas.agent_task import (
+    AgentTaskCreate,
+    AgentTaskListResponse,
+    AgentTaskPlanStep,
+    AgentTaskResponse,
+)
 from app.schemas.cell import (
     CellCreate,
     CellExecuteRequest,
@@ -21,6 +26,10 @@ from app.schemas.notebook import (
 )
 
 __all__ = [
+    "AgentTaskCreate",
+    "AgentTaskListResponse",
+    "AgentTaskPlanStep",
+    "AgentTaskResponse",
     "NotebookCreate",
     "NotebookUpdate",
     "NotebookResponse",
@@ -30,9 +39,6 @@ __all__ = [
     "CellMoveRequest",
     "CellExecuteRequest",
     "CellExecuteResponse",
-    "AgentQueryRequest",
-    "AgentQueryResponse",
-    "AgentProgressMessage",
     "KnowledgeNodeCreate",
     "KnowledgeNodeResponse",
     "KnowledgeSearchRequest",

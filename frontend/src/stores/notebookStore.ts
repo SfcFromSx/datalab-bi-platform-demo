@@ -483,9 +483,3 @@ wsClient.on('cell_update', (message) => {
   );
 });
 
-wsClient.on('agent_complete', () => {
-  const store = useNotebookStore.getState();
-  if (store.activeNotebook) {
-    store.loadNotebook(store.activeNotebook.id);
-  }
-});

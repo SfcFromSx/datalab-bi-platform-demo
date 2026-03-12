@@ -113,44 +113,79 @@ export interface DataSource {
   metadata: Record<string, unknown> | null;
 }
 
+export type ChatMode = 'chat' | 'design' | 'agent';
+
+export type ChatStepType =
+  | 'thinking'
+  | 'sql'
+  | 'executing'
+  | 'data'
+  | 'chart'
+  | 'answer'
+  | 'error'
+  | 'action'
+  | 'action_result'
+  | 'plan'
+  | 'agent_action'
+  | 'agent_progress'
+  | 'summary';
+
+export interface DesignAction {
+  action: 'add_cell' | 'edit_cell' | 'delete_cell' | 'move_cell' | 'execute_cell';
+  cell_type?: CellType;
+  cell_id?: string;
+  source?: string;
+  position?: number;
+  description?: string;
+}
+
+export interface ChatStep {
+  type: ChatStepType;
+  content: string | TableData | Record<string, unknown> | DesignAction | DesignAction[];
+  streaming?: boolean;
+  applied?: boolean;
+}
+
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant';
   content: string;
   timestamp: number;
-  cells_created?: CellCreated[];
-  data?: TableData;
-  chart?: any;
-  sections?: ChatSection[];
-}
-
-export interface ChatSection {
-  id: string;
-  title: string;
-  content: string;
-  status: 'running' | 'done' | 'error';
-  type: 'markdown' | 'sql' | 'chart' | 'table';
-}
-
-export interface CellCreated {
-  id?: string;
-  cell_type: CellType;
-  source: string;
-  position?: number;
-}
-
-export interface AgentQueryResponse {
-  task_id: string;
-  status: string;
-  message: string;
-  cells_created: CellCreated[];
-  cells_modified: CellCreated[];
+  steps: ChatStep[];
+  status: 'streaming' | 'done' | 'error';
+  mode?: ChatMode;
 }
 
 export interface WSMessage {
   type: string;
   payload: Record<string, unknown>;
   timestamp?: number;
+}
+
+export type AgentTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface AgentTaskPlanStep {
+  index: number;
+  description: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  cell_id?: string;
+}
+
+export interface AgentTask {
+  id: string;
+  notebook_id: string | null;
+  datasource_id: string | null;
+  query: string;
+  status: AgentTaskStatus;
+  plan: AgentTaskPlanStep[];
+  progress: number;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  tokens_used: number;
+  queries_executed: number;
+  cells_created: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface KnowledgeNode {
@@ -160,6 +195,13 @@ export interface KnowledgeNode {
   parent_id: string | null;
   components: Record<string, unknown> | null;
   children: KnowledgeNode[];
+}
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  model: string;
+  active: boolean;
 }
 
 export interface ChartConfig {

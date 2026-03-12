@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import agents, cells, datasources, folders, knowledge, notebooks, websocket
+from app.api import agent_tasks, cells, chat, datasources, folders, knowledge, models, notebooks, websocket
 from app.config import settings
 from app.database import init_db
 
@@ -53,9 +53,11 @@ async def add_request_id(request, call_next):
 app.include_router(notebooks.router, prefix="/api")
 app.include_router(cells.router, prefix="/api")
 app.include_router(folders.router, prefix="/api")
-app.include_router(agents.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
 app.include_router(knowledge.router, prefix="/api")
 app.include_router(datasources.router, prefix="/api")
+app.include_router(agent_tasks.router, prefix="/api")
+app.include_router(models.router, prefix="/api")
 app.include_router(websocket.router)
 
 
